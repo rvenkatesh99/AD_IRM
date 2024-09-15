@@ -3,3 +3,6 @@
 
 # ignore ALL files in .vscode
 vscode/
+
+# ignore all bsub files
+*.bsub
