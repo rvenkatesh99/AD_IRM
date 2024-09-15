@@ -6,7 +6,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve, confusion_matrix, classification_report
 from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
+# from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 
 def train_random_forest(X_train, X_val, y_train, y_val, verbose=True, n_jobs=-1):
