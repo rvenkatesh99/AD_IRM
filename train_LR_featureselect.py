@@ -7,30 +7,35 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_auc_score, roc_curve
 from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import ElasticNetCV
+from sklearn.pipeline import make_pipeline
+from sklearn.decomposition import PCA
 from sklearn.feature_selection import SelectFromModel
 import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings('ignore')
 
+
 def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, output_file, use_feature_selection=True, verbose=True, n_jobs=-1):
-    # Feature selection using Lasso (L1 regularization) if enabled
     if use_feature_selection:
-        lasso = LogisticRegression(penalty='l1', solver='saga', random_state=42, n_jobs=n_jobs, max_iter=500, C=0.01)
+        # Feature selection using Lasso (L1 regularization)
+        lasso = LogisticRegression(penalty='l1', solver='saga', random_state=42, n_jobs=n_jobs, max_iter=500, C=0.1)
         lasso.fit(X_train, y_train)
         
-        # Select only features with non-zero coefficients
-        selector = SelectFromModel(lasso, prefit=True, threshold=1e-4)
+        # Select only the features with non-zero coefficients
+        selector = SelectFromModel(lasso, prefit=True, threshold=1e-5)
         X_train = selector.transform(X_train)
         X_val = selector.transform(X_val)
         
         # Log the number of features selected
         with open(f'{output_file}.txt', "a") as f:
-            f.write(f'Selected {X_train.shape[1]} features out of {X_train.shape[1]} using Lasso feature selection\n')
+            f.write(f'Selected {X_train.shape[1]} features out of {len(X_train.columns)} using Lasso feature selection\n')
     else:
         selector = None  # No feature selection
     
     # Define ElasticNet logistic regression model
-    model = LogisticRegression(penalty='elasticnet', solver='saga', random_state=42, n_jobs=n_jobs, max_iter=500)
+    model = LogisticRegression(penalty='elasticnet', solver='saga', 
+                               random_state=42, n_jobs=n_jobs, max_iter=500)
 
     # Set hyperparameter grid for tuning
     param_grid = {
@@ -38,8 +43,10 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
         'C': [0.01, 0.1, 1, 10]  # Regularization strength
     }
 
-    # Perform grid search with 5-fold cross-validation
-    grid_search = GridSearchCV(model, param_grid, cv=5, scoring='accuracy', verbose=1 if verbose else 0, n_jobs=n_jobs)
+    # Perform grid search with 5-fold cross-validation using validation set
+    grid_search = GridSearchCV(model, param_grid, cv=5, 
+                               scoring='accuracy', verbose=1 if verbose else 0, 
+                               n_jobs=n_jobs)
     grid_search.fit(X_train, y_train)
 
     # Best model from grid search
@@ -77,14 +84,14 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
     plt.savefig(f'{output_file}_Validation_ROC.png')
     plt.show()
 
+    # Return best model, validation metrics, and the selector (if feature selection is used)
     return best_model, val_accuracy, val_roc_auc, selector
 
-
-def main(input_file, output_file, verbose=True, n_jobs=-1):
+def main(input_file, output_file, use_feature_selection=True, verbose=True, n_jobs=-1):
     # Load and preprocess data
     df = pd.read_csv(input_file)
     df = df.drop(columns=['FID', 'SampleID'])
-    X = df.iloc[:, :-1].values  # Last column is the target
+    X = df.iloc[:, :-1].values  # last column is the target
     y = df.iloc[:, -1].values
 
     # Split the data into training+validation and test sets
@@ -105,54 +112,57 @@ def main(input_file, output_file, verbose=True, n_jobs=-1):
     with open(f'{output_file}.txt', "a") as f:
         f.write('Data scaled\n')
 
-    # Compare performance with and without feature selection
-    for use_feature_selection in [False, True]:
-        feature_select_str = "with" if use_feature_selection else "without"
-        with open(f'{output_file}.txt', "a") as f:
-            f.write(f"\nEvaluating ElasticNet Logistic Regression {feature_select_str} Feature Selection:\n")
-        
-        best_model, val_acc, val_roc_auc, selector = train_elasticnet_with_feature_selection(
-            X_train_scaled, X_val_scaled, y_train, y_val, output_file, 
-            use_feature_selection=use_feature_selection, verbose=verbose, n_jobs=n_jobs
-        )
+    # Train and tune ElasticNet Logistic Regression with or without Feature Selection
+    with open(f'{output_file}.txt', "a") as f:
+        f.write(f"\nEvaluating ElasticNet Logistic Regression with {'Feature Selection' if use_feature_selection else 'No Feature Selection'} and Hyperparameter Tuning:\n")
+    
+    best_model, val_acc, val_roc_auc, selector = train_elasticnet_with_feature_selection(
+        X_train_scaled, X_val_scaled, y_train, y_val, verbose=verbose, n_jobs=n_jobs, output_file=output_file, use_feature_selection=use_feature_selection)
 
-        # Test the best model on the test set
-        y_test_pred = best_model.predict(X_test_scaled)
-        y_test_pred_prob = best_model.predict_proba(X_test_scaled)[:, 1]
-        
-        # Test set metrics
-        test_accuracy = accuracy_score(y_test, y_test_pred)
-        test_roc_auc = roc_auc_score(y_test, y_test_pred_prob)
-        test_conf_matrix = confusion_matrix(y_test, y_test_pred)
-        test_class_report = classification_report(y_test, y_test_pred, output_dict=True)
+    # Apply feature selection on the test set if it was used
+    if use_feature_selection and selector is not None:
+        X_test_scaled = selector.transform(X_test_scaled)
 
-        # Write test results to output file
-        with open(f'{output_file}.txt', "a") as f:
-            f.write(f"Test Accuracy: {test_accuracy:.4f}\n")
-            f.write(f"Test ROC-AUC Score: {test_roc_auc:.4f}\n")
-            f.write(f"Test Confusion Matrix:\n{test_conf_matrix}\n")
-            f.write(f"Test Classification Report:\n{json.dumps(test_class_report, indent=4)}\n")
+    # Test the best model on the test set
+    with open(f'{output_file}.txt', "a") as f:
+        f.write("\nEvaluating on Test Set:\n")
+    
+    y_test_pred = best_model.predict(X_test_scaled)
+    y_test_pred_prob = best_model.predict_proba(X_test_scaled)[:, 1]
 
-        # Plot ROC Curve for test set
-        fpr, tpr, _ = roc_curve(y_test, y_test_pred_prob)
-        plt.figure()
-        plt.plot(fpr, tpr, color='blue', label=f'ROC Curve (area = {test_roc_auc:.4f})')
-        plt.plot([0, 1], [0, 1], color='red', linestyle='--')
-        plt.xlim([0.0, 1.0])
-        plt.ylim([0.0, 1.05])
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title(f'Test Set Receiver Operating Characteristic {feature_select_str} Feature Selection')
-        plt.legend(loc="lower right")
-        plt.savefig(f'{output_file}_Test_ROC_{feature_select_str}_FS.png')
-        plt.show()
+    # Test set metrics
+    test_accuracy = accuracy_score(y_test, y_test_pred)
+    test_roc_auc = roc_auc_score(y_test, y_test_pred_prob)
+    test_conf_matrix = confusion_matrix(y_test, y_test_pred)
+    test_class_report = classification_report(y_test, y_test_pred, output_dict=True)
 
+    # Write test results to output file
+    with open(f'{output_file}.txt', "a") as f:
+        f.write(f"Test Accuracy: {test_accuracy:.4f}\n")
+        f.write(f"Test ROC-AUC Score: {test_roc_auc:.4f}\n")
+        f.write(f"Test Confusion Matrix:\n{test_conf_matrix}\n")
+        f.write(f"Test Classification Report:\n{json.dumps(test_class_report, indent=4)}\n")
+
+    # Plot ROC Curve for test set
+    fpr, tpr, _ = roc_curve(y_test, y_test_pred_prob)
+    plt.figure()
+    plt.plot(fpr, tpr, color='blue', label=f'ROC Curve (area = {test_roc_auc:.4f})')
+    plt.plot([0, 1], [0, 1], color='red', linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Test Set Receiver Operating Characteristic')
+    plt.legend(loc="lower right")
+    plt.savefig(f'{output_file}_Test_ROC.png')
+    plt.show()
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python train_elasticnet_logistic.py <input_csv_file> <output_txt_file>")
+    if len(sys.argv) != 4:
+        print("Usage: python train_elasticnet_logistic.py <input_csv_file> <output_txt_file> <use_feature_selection>")
         sys.exit(1)
 
     input_file = sys.argv[1]
     output_file = sys.argv[2]
-    main(input_file, output_file)
+    use_feature_selection = bool(int(sys.argv[3]))  # Pass 1 for True, 0 for False
+    main(input_file, output_file, use_feature_selection)
