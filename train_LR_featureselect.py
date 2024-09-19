@@ -16,23 +16,53 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
-def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, output_file, use_feature_selection=True, verbose=True, n_jobs=-1):
+from sklearn.decomposition import PCA
+
+def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, output_file, feature_selection_method, use_feature_selection=True, 
+                                            variance_threshold=0.8, verbose=True, n_jobs=-1):
     if use_feature_selection:
-        # Feature selection using Lasso (L1 regularization)
-        lasso = LogisticRegression(penalty='l1', solver='saga', random_state=42, n_jobs=n_jobs, max_iter=500, C=0.1)
-        lasso.fit(X_train, y_train)
-        
-        # Select only the features with non-zero coefficients
-        selector = SelectFromModel(lasso, prefit=True, threshold=1e-5)
-        X_train = selector.transform(X_train)
-        X_val = selector.transform(X_val)
-        
-        # Log the number of features selected
-        with open(f'{output_file}.txt', "a") as f:
-            f.write(f'Selected {X_train.shape[1]} features out of {len(X_train.columns)} using Lasso feature selection\n')
+        if feature_selection_method == 'lasso':
+            # Feature selection using Lasso (L1 regularization)
+            lasso = LogisticRegression(penalty='l1', solver='saga', random_state=42, n_jobs=n_jobs, max_iter=500, C=0.1)
+            lasso.fit(X_train, y_train)
+            
+            # Select only the features with non-zero coefficients
+            selector = SelectFromModel(lasso, prefit=True, threshold=1e-5)
+            X_train = selector.transform(X_train)
+            X_val = selector.transform(X_val)
+            
+            # Log the number of features selected
+            with open(f'{output_file}.txt', "a") as f:
+                f.write(f'Selected {X_train.shape[1]} features out of {X_train.shape[1]} using Lasso feature selection\n')
+
+        elif feature_selection_method == 'pca':
+            # Feature selection using PCA to retain 80% of variance
+            pca = PCA(n_components=variance_threshold, random_state=42)
+            X_train = pca.fit_transform(X_train)
+            X_val = pca.transform(X_val)
+            
+            # Number of components chosen to explain 80% variance
+            n_components_selected = pca.n_components_
+            
+            # Log the number of components selected
+            with open(f'{output_file}.txt', "a") as f:
+                f.write(f'Selected {n_components_selected} principal components explaining {variance_threshold * 100}% variance using PCA\n')
+            
+            # Visualize the first two principal components
+            plt.figure(figsize=(10, 7))
+            plt.scatter(X_train[:, 0], X_train[:, 1], c=y_train, cmap='viridis', edgecolor='k', s=50)
+            plt.xlabel('First Principal Component')
+            plt.ylabel('Second Principal Component')
+            plt.title('PCA - First two principal components')
+            plt.colorbar(label='Class Label')
+            plt.savefig(f'{output_file}_pca_visualization.png')
+            plt.show()
+
+        else:
+            raise ValueError("Unsupported feature selection method. Use 'lasso' or 'pca'.")
     else:
-        selector = None  # No feature selection
-    
+        selector = None
+        
     # Define ElasticNet logistic regression model
     model = LogisticRegression(penalty='elasticnet', solver='saga', 
                                random_state=42, n_jobs=n_jobs, max_iter=500)
@@ -87,7 +117,9 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
     # Return best model, validation metrics, and the selector (if feature selection is used)
     return best_model, val_accuracy, val_roc_auc, selector
 
-def main(input_file, output_file, use_feature_selection=True, verbose=True, n_jobs=-1):
+
+# Main function with consistent feature selection/transformation application
+def main(input_file, output_file, use_feature_selection=True, feature_selection_method='lasso', verbose=True, n_jobs=-1):
     # Load and preprocess data
     df = pd.read_csv(input_file)
     df = df.drop(columns=['FID', 'SampleID'])
@@ -115,18 +147,27 @@ def main(input_file, output_file, use_feature_selection=True, verbose=True, n_jo
     # Train and tune ElasticNet Logistic Regression with or without Feature Selection
     with open(f'{output_file}.txt', "a") as f:
         f.write(f"\nEvaluating ElasticNet Logistic Regression with {'Feature Selection' if use_feature_selection else 'No Feature Selection'} and Hyperparameter Tuning:\n")
-    
-    best_model, val_acc, val_roc_auc, selector = train_elasticnet_with_feature_selection(
-        X_train_scaled, X_val_scaled, y_train, y_val, verbose=verbose, n_jobs=n_jobs, output_file=output_file, use_feature_selection=use_feature_selection)
 
-    # Apply feature selection on the test set if it was used
+    best_model, val_acc, val_roc_auc, selector = train_elasticnet_with_feature_selection(
+        X_train_scaled, X_val_scaled, y_train, y_val, verbose=verbose, n_jobs=n_jobs, output_file=output_file, 
+        use_feature_selection=use_feature_selection, feature_selection_method=feature_selection_method, variance_threshold=0.8)
+    
+    variance_threshold = variance_threshold if feature_selection_method == 'pca' else None
+
+    # Apply feature selection/transformation on the test set if it was used
     if use_feature_selection and selector is not None:
-        X_test_scaled = selector.transform(X_test_scaled)
+        if feature_selection_method == 'pca':
+            # Apply the same PCA transformation used in training to the test set
+            pca = PCA(n_components=variance_threshold, random_state=42)
+            pca.fit(X_train_scaled)  # Fit on training data
+            X_test_scaled = pca.transform(X_test_scaled)  # Transform test data
+        elif feature_selection_method == 'lasso':
+            X_test_scaled = selector.transform(X_test_scaled)
 
     # Test the best model on the test set
     with open(f'{output_file}.txt', "a") as f:
         f.write("\nEvaluating on Test Set:\n")
-    
+
     y_test_pred = best_model.predict(X_test_scaled)
     y_test_pred_prob = best_model.predict_proba(X_test_scaled)[:, 1]
 
@@ -157,12 +198,14 @@ def main(input_file, output_file, use_feature_selection=True, verbose=True, n_jo
     plt.savefig(f'{output_file}_Test_ROC.png')
     plt.show()
 
+
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        print("Usage: python train_elasticnet_logistic.py <input_csv_file> <output_txt_file> <use_feature_selection>")
+    if len(sys.argv) != 5:
+        print("Usage: python train_elasticnet_logistic.py <input_csv_file> <output_txt_file> <use_feature_selection> <feature_selection_method>")
         sys.exit(1)
 
     input_file = sys.argv[1]
     output_file = sys.argv[2]
     use_feature_selection = bool(int(sys.argv[3]))  # Pass 1 for True, 0 for False
-    main(input_file, output_file, use_feature_selection)
+    feature_selection_method = sys.argv[4]
+    main(input_file, output_file, use_feature_selection, feature_selection_method)
