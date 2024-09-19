@@ -20,6 +20,10 @@ from sklearn.decomposition import PCA
 
 def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, output_file, feature_selection_method, use_feature_selection=True, 
                                             variance_threshold=0.8, verbose=True, n_jobs=-1):
+    
+    selector = None
+
+    # Feature selection using Lasso (L1 regularization) if enabled
     if use_feature_selection:
         if feature_selection_method == 'lasso':
             # Feature selection using Lasso (L1 regularization)
@@ -119,7 +123,7 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
 
 
 # Main function with consistent feature selection/transformation application
-def main(input_file, output_file, use_feature_selection=True, feature_selection_method='lasso', verbose=True, n_jobs=-1):
+def main(input_file, output_file, use_feature_selection, feature_selection_method, verbose=True, n_jobs=-1):
     # Load and preprocess data
     df = pd.read_csv(input_file)
     df = df.drop(columns=['FID', 'SampleID'])
@@ -151,16 +155,12 @@ def main(input_file, output_file, use_feature_selection=True, feature_selection_
     best_model, val_acc, val_roc_auc, selector = train_elasticnet_with_feature_selection(
         X_train_scaled, X_val_scaled, y_train, y_val, verbose=verbose, n_jobs=n_jobs, output_file=output_file, 
         use_feature_selection=use_feature_selection, feature_selection_method=feature_selection_method, variance_threshold=0.8)
-    
-    variance_threshold = variance_threshold if feature_selection_method == 'pca' else None
 
     # Apply feature selection/transformation on the test set if it was used
     if use_feature_selection and selector is not None:
         if feature_selection_method == 'pca':
             # Apply the same PCA transformation used in training to the test set
-            pca = PCA(n_components=variance_threshold, random_state=42)
-            pca.fit(X_train_scaled)  # Fit on training data
-            X_test_scaled = pca.transform(X_test_scaled)  # Transform test data
+            X_test_scaled = selector.transform(X_test_scaled)  # Use the same PCA object returned earlier
         elif feature_selection_method == 'lasso':
             X_test_scaled = selector.transform(X_test_scaled)
 
