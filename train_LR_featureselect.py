@@ -15,10 +15,8 @@ import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings('ignore')
 
-
-from sklearn.decomposition import PCA
-
-def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, output_file, feature_selection_method, use_feature_selection=True, 
+def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, output_file, feature_selection_method, 
+                                            use_feature_selection=True, 
                                             variance_threshold=0.8, verbose=True, n_jobs=-1):
     
     selector = None
@@ -61,6 +59,9 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
             plt.colorbar(label='Class Label')
             plt.savefig(f'{output_file}_pca_visualization.png')
             plt.show()
+
+            # Assign PCA object to selector
+            selector = pca
 
         else:
             raise ValueError("Unsupported feature selection method. Use 'lasso' or 'pca'.")
@@ -127,7 +128,7 @@ def main(input_file, output_file, use_feature_selection, feature_selection_metho
     # Load and preprocess data
     df = pd.read_csv(input_file)
     df = df.drop(columns=['FID', 'SampleID'])
-    X = df.iloc[:, :-1].values  # last column is the target
+    X = df.iloc[:, :-1].values  # Last column is the target
     y = df.iloc[:, -1].values
 
     # Split the data into training+validation and test sets
@@ -152,9 +153,18 @@ def main(input_file, output_file, use_feature_selection, feature_selection_metho
     with open(f'{output_file}.txt', "a") as f:
         f.write(f"\nEvaluating ElasticNet Logistic Regression with {'Feature Selection' if use_feature_selection else 'No Feature Selection'} and Hyperparameter Tuning:\n")
 
+    # Train the model and get the selector used
     best_model, val_acc, val_roc_auc, selector = train_elasticnet_with_feature_selection(
         X_train_scaled, X_val_scaled, y_train, y_val, verbose=verbose, n_jobs=n_jobs, output_file=output_file, 
         use_feature_selection=use_feature_selection, feature_selection_method=feature_selection_method, variance_threshold=0.8)
+
+    # Check if selector is correctly initialized
+    if use_feature_selection:
+        if selector is None:
+            raise ValueError(f"Feature selection was requested using '{feature_selection_method}', but the selector is not initialized.")
+        else:
+            with open(f'{output_file}.txt', "a") as f:
+                f.write(f"Feature selection object initialized: {selector}\n")
 
     # Apply feature selection/transformation on the test set if it was used
     if use_feature_selection and selector is not None:
@@ -163,12 +173,25 @@ def main(input_file, output_file, use_feature_selection, feature_selection_metho
             X_test_scaled = selector.transform(X_test_scaled)  # Use the same PCA object returned earlier
         elif feature_selection_method == 'lasso':
             X_test_scaled = selector.transform(X_test_scaled)
+    
+    # Debugging information to validate feature dimensions
+    with open(f'{output_file}.txt', "a") as f:
+        f.write(f"Shape of training data: {X_train_scaled.shape}\n")
+        f.write(f"Shape of validation data: {X_val_scaled.shape}\n")
+        f.write(f"Shape of test data after transformation: {X_test_scaled.shape}\n")
 
     # Test the best model on the test set
     with open(f'{output_file}.txt', "a") as f:
         f.write("\nEvaluating on Test Set:\n")
 
-    y_test_pred = best_model.predict(X_test_scaled)
+    # Ensure the features in the test set match the model's expected input
+    try:
+        y_test_pred = best_model.predict(X_test_scaled)
+    except ValueError as e:
+        with open(f'{output_file}.txt', "a") as f:
+            f.write(f"Error during prediction: {e}\n")
+        raise
+
     y_test_pred_prob = best_model.predict_proba(X_test_scaled)[:, 1]
 
     # Test set metrics
@@ -207,5 +230,5 @@ if __name__ == "__main__":
     input_file = sys.argv[1]
     output_file = sys.argv[2]
     use_feature_selection = bool(int(sys.argv[3]))  # Pass 1 for True, 0 for False
-    feature_selection_method = sys.argv[4]
+    feature_selection_method = str(sys.argv[4])
     main(input_file, output_file, use_feature_selection, feature_selection_method)
