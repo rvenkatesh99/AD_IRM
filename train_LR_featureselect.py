@@ -60,6 +60,15 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
             plt.savefig(f'{output_file}_pca_visualization.png')
             plt.show()
 
+            # Generate Scree Plot
+            plt.figure(figsize=(10, 7))
+            plt.plot(np.arange(1, len(pca.explained_variance_ratio_) + 1), pca.explained_variance_ratio_, marker='o', linestyle='--')
+            plt.xlabel('Principal Component')
+            plt.ylabel('Explained Variance Ratio')
+            plt.title('Scree Plot')
+            plt.savefig(f'{output_file}_scree_plot.png')
+            plt.show()
+
             # Assign PCA object to selector
             selector = pca
 
@@ -86,6 +95,38 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
 
     # Best model from grid search
     best_model = grid_search.best_estimator_
+
+    # Training performance
+    y_train_pred = best_model.predict(X_train)
+    y_train_pred_prob = best_model.predict_proba(X_train)[:, 1]  # Probabilities for ROC-AUC
+
+    # Training metrics
+    train_accuracy = accuracy_score(y_train, y_train_pred)
+    train_roc_auc = roc_auc_score(y_train, y_train_pred_prob)
+    train_conf_matrix = confusion_matrix(y_train, y_train_pred)
+    train_class_report = classification_report(y_train, y_train_pred, output_dict=True)
+
+    # Write training results to output file
+    with open(f'{output_file}.txt', "a") as f:
+        f.write(f"\nTraining Accuracy: {train_accuracy:.4f}\n")
+        f.write(f"Training ROC-AUC Score: {train_roc_auc:.4f}\n")
+        f.write(f"Training Confusion Matrix:\n{train_conf_matrix}\n")
+        f.write(f"Training Classification Report:\n{json.dumps(train_class_report, indent=4)}\n")
+
+    # Plot ROC Curve for training set
+    fpr, tpr, _ = roc_curve(y_train, y_train_pred_prob)
+    plt.figure()
+    plt.plot(fpr, tpr, color='blue', label=f'ROC Curve (area = {train_roc_auc:.4f})')
+    plt.plot([0, 1], [0, 1], color='red', linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Training Set Receiver Operating Characteristic')
+    plt.legend(loc="lower right")
+    plt.savefig(f'{output_file}_Training_ROC.png')
+    plt.show()
+
 
     # Validate the best model on the validation set
     y_val_pred = best_model.predict(X_val)
