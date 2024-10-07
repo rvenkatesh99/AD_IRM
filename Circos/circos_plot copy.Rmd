@@ -1,0 +1,259 @@
+---
+title: "make_circos.CMVD"
+author: "Tess Cherlin"
+date: "2023-08-17"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# readme: make inner scatterplot for circlize plot
+# notes: should be generalizable with maybe some tweaks to the label spacing
+# also note that certain points are outside of plotting region,
+# I believe this is due to the ideogram and the data not having the same 
+# chromosome lengths ?
+
+# rm(list = ls())
+
+library(dplyr)
+library(circlize)
+library(ComplexHeatmap)
+```
+
+################################################################################
+#                                 variables                                    #
+################################################################################
+```{r}
+# inputs 
+# gene.path <- file.path("/project/ssverma_shared/personal/tcherlin/CMVD_Stuff/Circos/processed", "gene_track_data_gr")
+gene.path <- file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/", "gene_track_data_ad")
+man.path <- file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/", "manhattan_data_ad")
+twas.path <- file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/", "twas_data_ad")
+pwas.path <- file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/", "pwas_data_ad")
+```
+
+```{r}
+# plot variables
+gwas.line <- -log10(5e-8)
+twas.line <- -log10(5.62e-06)
+pwas.line <- -log10(5.29e-05)
+col.het.bg <- "#B3E2D5" # background for heterozygosity track
+col.het.pch <- "darkred" # points for heterozygosity track
+col.het2.bg <- "#E6E6FA" # background for heterozygosity track
+col.het2.pch <- "darkblue" # points for heterozygosity track
+col.genes.ns <- "lightgray"
+# colors for manhattan plot points set in data format function
+```
+
+
+################################################################################
+#                               loading zone                                   #
+################################################################################
+```{r}
+load(gene.path)
+load(man.path)
+load(pwas.path)
+load(twas.path)
+
+# want to make the twas value1 upside-down
+#twas_gr5$value1 <- twas_gr5$value1*(-1)
+
+dim(genes.bed.1)
+dim(mega.bed_gr)
+dim(pwas_gr5)
+dim(twas_gr5)
+
+```
+################################################################################
+#                               circos circus                                  #
+################################################################################
+```{r}
+png(file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/AD_WAS_circos.png"),  
+    width = 5,
+    height= 5.5,
+    units = "in",
+    res = 1200)
+# pdf(file.path("HF_multiancestry_circos.pdf"))
+
+circos.clear()
+
+circos.par("start.degree" = 90, # set circos parameters
+           gap.degree = c(rep(1, 21), 8), # small gap between chrs + larger for axis
+           track.margin = c(0.005, 0.005), # remove the spaces between the tracks
+           cell.padding = c(0.001, 0.01, 0.01, 0.001))
+
+# initialize a genomics template
+circos.initializeWithIdeogram(plotType = NULL,         
+                              species = "hg38", 
+                              chromosome.index = paste0("chr", c(1:22)))
+
+circos.genomicLabels(genes.bed.1,
+                     labels.column = 4,
+                     side = "outside",
+                     cex = 0.27, # Decreased from 0.3 --> 0.2
+                     line_lwd = 0.8,
+                     connection_height = convert_height(4, "mm"), # increased from 3 to 4
+                     #line_col = "blue",
+                     #col = "blue")
+                     line_col =  ifelse(genes.bed.1$group == "TWAS", col.het.pch,
+                                        ifelse(genes.bed.1$group == "PWAS", col.het2.pch,
+                                               ifelse(genes.bed.1$group == "Multiple", "purple", "black"))),
+                     col =  ifelse(genes.bed.1$group == "TWAS", col.het.pch,
+                                   ifelse(genes.bed.1$group == "PWAS", col.het2.pch,
+                                          ifelse(genes.bed.1$group == "Multiple", "purple", "black"))))
+
+# chromosome track
+circos.track(ylim = c(0, 1),                       
+             panel.fun = function(x, y) {
+               chr  = gsub("chr", CELL_META$sector.index, replace = "")
+               xlim = CELL_META$xlim
+               ylim = CELL_META$ylim
+               circos.rect(xlim[1], 0, xlim[2], 1, 
+                           col = "white", 
+                           cex = 0.2,  # Increased from 0.2 --> 0.3
+                           lwd = 0.5 ) # thinner box outline
+               circos.text(mean(xlim), mean(ylim), 
+                           chr, 
+                           cex = 0.4, 
+                           col = "black",
+                           facing = "inside", 
+                           niceFacing = TRUE)
+             }, 
+             track.height = 0.03, 
+             bg.border = NA)
+#test = mega.bed_gr[mega.bed_gr$value1>1,]
+# manhattan plot
+mega.bed_gr <- na.omit(mega.bed_gr)
+circos.genomicTrack(mega.bed_gr,
+#circos.genomicTrack(mega.bed_gr[mega.bed_gr$value1>1,],
+                    # ylim = c(0, 30),
+                    ylim = c(floor(min(mega.bed_gr$value1)),
+                           ceiling(max(mega.bed_gr$value1))),
+                    panel.fun = function(region, value, ...) {
+                      circos.genomicPoints(region, 
+                                           value, 
+                                           numeric.column = 1,
+                                           col = "black",
+                                           #col = value[, 2],
+                                           pch = 16, 
+                                           cex = 0.3, ...)
+                      i = getI(...)
+                      cell.xlim = get.cell.meta.data("cell.xlim")
+                      circos.lines(cell.xlim, c(gwas.line, gwas.line),
+                                   lty = 2, col = "#D55E00")
+                    },
+                    track.height = 0.18,
+                    bg.border = NA,
+                    bg.col = "gray96")
+circos.yaxis(side = "left",                 
+             at = c(floor(min(mega.bed_gr$value1)), 
+                    50, 100, 150, 200),
+             labels = c("",50, 100, 150, 200),
+              #labels = c(floor(min(mega.bed$value1)), 
+               #         10, 20, 30),
+             sector.index = get.all.sector.index()[1],
+             labels.cex = 0.4, # Increased from 0.3 --> 0.4
+             lwd = 0.3, 
+             tick.length = 0.5*(convert_x(1, "mm", 
+                                          get.cell.meta.data("sector.index"), 
+                                          get.cell.meta.data("track.index"))))
+
+# TWAS manhattan plot
+circos.genomicTrack(twas_gr5,
+                    ylim = c(floor(min(twas_gr5$value1)),
+                           ceiling(max(twas_gr5$value1))),
+                    panel.fun = function(region, value, ...) {
+                      circos.genomicPoints(region,
+                                           value,
+                                           numeric.column = 1,
+                                           col = value$value2,
+                                           pch = 16,
+                                           cex = 0.5, ...)
+                      i = getI(...)
+                      cell.xlim = get.cell.meta.data("cell.xlim")
+                      circos.lines(cell.xlim, c(-twas.line, -twas.line),
+                                   lty = 2, col = "#D55E00")
+                    },
+                    track.height = 0.18,
+                    bg.border = NA,
+                    bg.col = "gray96")
+circos.yaxis(side = "left",
+             at = c(floor(min(twas_gr5$value1)),
+                    -10, -20, -30, -40, -50),
+             labels = c("", 10, 20, 30, 40, 50),
+             #labels = c(floor(min(mega.bed$value1)),
+             #         10, 20, 30),
+             sector.index = get.all.sector.index()[1],
+             labels.cex = 0.4, # Increased from 0.3 --> 0.4
+             lwd = 0.3,
+             tick.length = 0.5*(convert_x(1, "mm",
+                                          get.cell.meta.data("sector.index"),
+                                          get.cell.meta.data("track.index"))))
+
+# PWAS manhattan plot
+circos.genomicTrack(pwas_gr5,
+                    ylim = c(-30, 0),
+                    panel.fun = function(region, value, ...) {
+                      circos.genomicPoints(region,
+                                           value,
+                                           numeric.column = 1,
+                                           col = value$value2,
+                                           pch = 16,
+                                           cex = 0.5, ...)
+                      i = getI(...)
+                      cell.xlim = get.cell.meta.data("cell.xlim")
+                      circos.lines(cell.xlim, c(-pwas.line, -pwas.line),
+                                   lty = 2, col = "#D55E00")
+                    },
+                    track.height = 0.18,
+                    bg.border = NA,
+                    bg.col = "gray96")
+circos.yaxis(side = "left",
+             at = c(floor(min(pwas_gr5$value1)),
+                    -5, -10, -15, -20, -25, -30),
+             labels = c("", 5, 10, 15, 20, 25, 30),
+             #labels = c(floor(min(mega.bed$value1)),
+             #         10, 20, 30),
+             sector.index = get.all.sector.index()[1],
+             labels.cex = 0.4, # Increased from 0.3 --> 0.4
+             lwd = 0.3,
+             tick.length = 0.5*(convert_x(1, "mm",
+                                          get.cell.meta.data("sector.index"),
+                                          get.cell.meta.data("track.index"))))
+
+legend1 = Legend(labels = c("GWAS", "TWAS", "PWAS", "Multiple"),
+                 title = "Annotation", type = "points",
+                 legend_gp = gpar(col = c("black", col.het.pch, col.het2.pch, "purple")),
+                 labels_gp = gpar(fontsize = 3),
+                 title_gp = gpar(fontsize = 4))
+
+legend2 = Legend(labels = c('Brain_Spinal_cord_cervical_c-1','Brain_Cortex','Brain_Substantia_nigra','Colon_Sigmoid','Liver',
+                            'Vagina','Whole_Blood','Brain_Anterior_cingulate_cortex_BA24','Brain_Frontal_Cortex_BA9',
+                            'Brain_Hypothalamus','Brain_Caudate_basal_ganglia','Brain_Nucleus_accumbens_basal_ganglia',
+                            'Brain_Cerebellar_Hemisphere','Brain_Putamen_basal_ganglia','Brain_Cerebellum','Brain_Amygdala',
+                            'Brain_Hippocampus'),
+                 title = "TWAS Tissues", type = "points",
+                 legend_gp = gpar(col = c("white", "#CB4335", "#9B59B6", "#4A235A", "#154360", "#5499C7", "#85C1E9", "#0E6251",
+                                          "#A2D9CE", "darkgreen", "#D4AC0D", "#7D6608", "#F39C12", "#D35400", "grey", "darkblue",
+                                          "black", "#641E16")),
+                 labels_gp = gpar(fontsize = 3),
+                 title_gp = gpar(fontsize = 4))
+
+legend3 = Legend(labels = c("EA", "AA"),
+                 title = "PWAS Models", type = "points",
+                 legend_gp = gpar(col = c("darkblue", "lightblue")),
+                 labels_gp = gpar(fontsize = 3),
+                 title_gp = gpar(fontsize = 4))
+
+draw(legend1, x = unit(4, "mm"), y = unit(1, "mm"), just = c("left", "bottom"))
+draw(legend3, x = unit(90, "mm"), y = unit(1, "mm"), just = c("left", "bottom"))
+draw(legend2, x = unit(108, "mm"), y = unit(1, "mm"), just = c("left", "bottom"))
+
+dev.off()
+```
+23305012160327
