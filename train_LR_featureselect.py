@@ -168,7 +168,11 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
 def main(input_file, output_file, use_feature_selection, feature_selection_method, verbose=True, n_jobs=-1):
     # Load and preprocess data
     df = pd.read_csv(input_file)
-    df = df.drop(columns=['FID', 'SampleID'])
+    
+    # drop columns starting with 'ADSP'
+    for column in df.columns:
+        if df[column].astype(str).str.startswith('ADSP').any():
+            df = df.drop(columns=[column])
     X = df.iloc[:, :-1].values  # Last column is the target
     y = df.iloc[:, -1].values
 
