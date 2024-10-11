@@ -5,7 +5,7 @@ import numpy as np
 import json
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_auc_score, roc_curve
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_auc_score, roc_curve, f1_score, balanced_accuracy_score, average_precision_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import ElasticNetCV
 from sklearn.pipeline import make_pipeline
@@ -103,6 +103,9 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
     # Training metrics
     train_accuracy = accuracy_score(y_train, y_train_pred)
     train_roc_auc = roc_auc_score(y_train, y_train_pred_prob)
+    train_f1 = f1_score(y_train, y_train_pred)
+    train_balanced_acc = balanced_accuracy_score(y_train, y_train_pred)
+    train_auprc = average_precision_score(y_train, y_train_pred_prob)
     train_conf_matrix = confusion_matrix(y_train, y_train_pred)
     train_class_report = classification_report(y_train, y_train_pred, output_dict=True)
 
@@ -110,6 +113,9 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
     with open(f'{output_file}.txt', "a") as f:
         f.write(f"\nTraining Accuracy: {train_accuracy:.4f}\n")
         f.write(f"Training ROC-AUC Score: {train_roc_auc:.4f}\n")
+        f.write(f"Training F1 Score: {train_f1:.4f}\n")
+        f.write(f"Training Balanced Accuracy: {train_balanced_acc:.4f}\n")
+        f.write(f"Training AUPRC: {train_auprc:.4f}\n")
         f.write(f"Training Confusion Matrix:\n{train_conf_matrix}\n")
         f.write(f"Training Classification Report:\n{json.dumps(train_class_report, indent=4)}\n")
 
@@ -135,6 +141,9 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
     # Validation metrics
     val_accuracy = accuracy_score(y_val, y_val_pred)
     val_roc_auc = roc_auc_score(y_val, y_val_pred_prob)
+    val_f1 = f1_score(y_val, y_val_pred)
+    val_balanced_acc = balanced_accuracy_score(y_val, y_val_pred)
+    val_auprc = average_precision_score(y_val, y_val_pred_prob)
     conf_matrix = confusion_matrix(y_val, y_val_pred)
     class_report = classification_report(y_val, y_val_pred, output_dict=True)
 
@@ -143,6 +152,9 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
         f.write(f"Best Model from GridSearch: {grid_search.best_params_}\n")
         f.write(f"Validation Accuracy: {val_accuracy:.4f}\n")
         f.write(f"Validation ROC-AUC Score: {val_roc_auc:.4f}\n")
+        f.write(f"Validation F1 Score: {val_f1:.4f}\n")
+        f.write(f"Validation Balanced Accuracy: {val_balanced_acc:.4f}\n")
+        f.write(f"Validation AUPRC: {val_auprc:.4f}\n")
         f.write(f"Confusion Matrix:\n{conf_matrix}\n")
         f.write(f"Classification Report:\n{json.dumps(class_report, indent=4)}\n")
 
@@ -160,111 +172,83 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
     plt.savefig(f'{output_file}_Validation_ROC.png')
     plt.show()
 
-    # Return best model, validation metrics, and the selector (if feature selection is used)
-    return best_model, val_accuracy, val_roc_auc, selector
+    return val_accuracy, val_roc_auc, val_f1, val_balanced_acc, val_auprc, best_model, selector
 
 
-# Main function with consistent feature selection/transformation application
-def main(input_file, output_file, use_feature_selection, feature_selection_method, verbose=True, n_jobs=-1):
+# Main function to run multiple iterations with different splits
+def run_multiple_iterations(input_file, output_file, use_feature_selection, feature_selection_method, 
+                            iterations=10, verbose=True, n_jobs=-1):
     # Load and preprocess data
     df = pd.read_csv(input_file)
-    
-    # drop columns starting with 'ADSP'
+
+    # Remove columns starting with 'ADSP'
     for column in df.columns:
-        if df[column].astype(str).str.startswith('ADSP').any():
+        if df[column].astype(str).str.startswith('A').any():
             df = df.drop(columns=[column])
-    X = df.iloc[:, :-1].values  # Last column is the target
-    y = df.iloc[:, -1].values
 
-    # Split the data into training+validation and test sets
-    X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X = df.iloc[:, :-1].values  # All columns except the last (target)
+    y = df.iloc[:, -1].values   # Last column is the target
 
-    # Split the training+validation set into separate training and validation sets
-    X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=0.25, random_state=42)
+    # Initialize lists to store metrics across iterations
+    accuracies = []
+    aucs = []
+    f1_scores = []
+    balanced_accuracies = []
+    auprcs = []
 
-    with open(f'{output_file}.txt', "w") as f:
-        f.write('Train-test-validation split complete\n')
+    for i in range(iterations):
+        # Train-test split
+        X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=0.2, random_state=42 + i)
+        X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=0.25, random_state=42 + i)
 
-    # Standardize the features
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_val_scaled = scaler.transform(X_val)
-    X_test_scaled = scaler.transform(X_test)
+        # Standardize the data
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_val_scaled = scaler.transform(X_val)
+        X_test_scaled = scaler.transform(X_test)
 
-    with open(f'{output_file}.txt', "a") as f:
-        f.write('Data scaled\n')
+        # Train the model
+        val_acc, val_roc_auc, val_f1, val_bal_acc, val_auprc, best_model, selector = train_elasticnet_with_feature_selection(
+            X_train_scaled, X_val_scaled, y_train, y_val, 
+            output_file=output_file,
+            feature_selection_method=feature_selection_method, 
+            use_feature_selection=use_feature_selection, 
+            verbose=verbose, n_jobs=n_jobs)
 
-    # Train and tune ElasticNet Logistic Regression with or without Feature Selection
-    with open(f'{output_file}.txt', "a") as f:
-        f.write(f"\nEvaluating ElasticNet Logistic Regression with {'Feature Selection' if use_feature_selection else 'No Feature Selection'} and Hyperparameter Tuning:\n")
+        # Store metrics
+        accuracies.append(val_acc)
+        aucs.append(val_roc_auc)
+        f1_scores.append(val_f1)
+        balanced_accuracies.append(val_bal_acc)
+        auprcs.append(val_auprc)
 
-    # Train the model and get the selector used
-    best_model, val_acc, val_roc_auc, selector = train_elasticnet_with_feature_selection(
-        X_train_scaled, X_val_scaled, y_train, y_val, verbose=verbose, n_jobs=n_jobs, output_file=output_file, 
-        use_feature_selection=use_feature_selection, feature_selection_method=feature_selection_method, variance_threshold=0.8)
-
-    # Check if selector is correctly initialized
-    if use_feature_selection:
-        if selector is None:
-            raise ValueError(f"Feature selection was requested using '{feature_selection_method}', but the selector is not initialized.")
-        else:
-            with open(f'{output_file}.txt', "a") as f:
-                f.write(f"Feature selection object initialized: {selector}\n")
-
-    # Apply feature selection/transformation on the test set if it was used
-    if use_feature_selection and selector is not None:
-        if feature_selection_method == 'pca':
-            # Apply the same PCA transformation used in training to the test set
-            X_test_scaled = selector.transform(X_test_scaled)  # Use the same PCA object returned earlier
-        elif feature_selection_method == 'lasso':
-            X_test_scaled = selector.transform(X_test_scaled)
+    # Calculate mean and standard error for each metric
+    avg_acc = np.mean(accuracies)
+    std_err_acc = np.std(accuracies) / np.sqrt(iterations)
     
-    # Debugging information to validate feature dimensions
+    avg_auc = np.mean(aucs)
+    std_err_auc = np.std(aucs) / np.sqrt(iterations)
+
+    avg_f1 = np.mean(f1_scores)
+    std_err_f1 = np.std(f1_scores) / np.sqrt(iterations)
+
+    avg_bal_acc = np.mean(balanced_accuracies)
+    std_err_bal_acc = np.std(balanced_accuracies) / np.sqrt(iterations)
+
+    avg_auprc = np.mean(auprcs)
+    std_err_auprc = np.std(auprcs) / np.sqrt(iterations)
+
+    # Output results to file
     with open(f'{output_file}.txt', "a") as f:
-        f.write(f"Shape of training data: {X_train_scaled.shape}\n")
-        f.write(f"Shape of validation data: {X_val_scaled.shape}\n")
-        f.write(f"Shape of test data after transformation: {X_test_scaled.shape}\n")
+        f.write(f"Results across {iterations} iterations:\n")
+        f.write(f"Average Accuracy: {avg_acc:.4f} (SE: {std_err_acc:.4f})\n")
+        f.write(f"Average ROC-AUC: {avg_auc:.4f} (SE: {std_err_auc:.4f})\n")
+        f.write(f"Average F1 Score: {avg_f1:.4f} (SE: {std_err_f1:.4f})\n")
+        f.write(f"Average Balanced Accuracy: {avg_bal_acc:.4f} (SE: {std_err_bal_acc:.4f})\n")
+        f.write(f"Average AUPRC: {avg_auprc:.4f} (SE: {std_err_auprc:.4f})\n")
 
-    # Test the best model on the test set
-    with open(f'{output_file}.txt', "a") as f:
-        f.write("\nEvaluating on Test Set:\n")
-
-    # Ensure the features in the test set match the model's expected input
-    try:
-        y_test_pred = best_model.predict(X_test_scaled)
-    except ValueError as e:
-        with open(f'{output_file}.txt', "a") as f:
-            f.write(f"Error during prediction: {e}\n")
-        raise
-
-    y_test_pred_prob = best_model.predict_proba(X_test_scaled)[:, 1]
-
-    # Test set metrics
-    test_accuracy = accuracy_score(y_test, y_test_pred)
-    test_roc_auc = roc_auc_score(y_test, y_test_pred_prob)
-    test_conf_matrix = confusion_matrix(y_test, y_test_pred)
-    test_class_report = classification_report(y_test, y_test_pred, output_dict=True)
-
-    # Write test results to output file
-    with open(f'{output_file}.txt', "a") as f:
-        f.write(f"Test Accuracy: {test_accuracy:.4f}\n")
-        f.write(f"Test ROC-AUC Score: {test_roc_auc:.4f}\n")
-        f.write(f"Test Confusion Matrix:\n{test_conf_matrix}\n")
-        f.write(f"Test Classification Report:\n{json.dumps(test_class_report, indent=4)}\n")
-
-    # Plot ROC Curve for test set
-    fpr, tpr, _ = roc_curve(y_test, y_test_pred_prob)
-    plt.figure()
-    plt.plot(fpr, tpr, color='blue', label=f'ROC Curve (area = {test_roc_auc:.4f})')
-    plt.plot([0, 1], [0, 1], color='red', linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Test Set Receiver Operating Characteristic')
-    plt.legend(loc="lower right")
-    plt.savefig(f'{output_file}_Test_ROC.png')
-    plt.show()
+    # Return averaged metrics
+    return avg_acc, std_err_acc, avg_auc, std_err_auc, avg_f1, std_err_f1, avg_bal_acc, std_err_bal_acc, avg_auprc, std_err_auprc
 
 
 if __name__ == "__main__":
@@ -276,4 +260,12 @@ if __name__ == "__main__":
     output_file = sys.argv[2]
     use_feature_selection = bool(int(sys.argv[3]))  # Pass 1 for True, 0 for False
     feature_selection_method = str(sys.argv[4])
-    main(input_file, output_file, use_feature_selection, feature_selection_method)
+    iterations = 10  # You can modify the number of iterations here
+
+    avg_acc, std_err_acc, avg_auc, std_err_auc, avg_f1, std_err_f1, avg_bal_acc, std_err_bal_acc, avg_auprc, std_err_auprc = run_multiple_iterations(input_file, output_file, use_feature_selection, feature_selection_method, iterations=iterations)
+    
+    print(f"Average Accuracy: {avg_acc:.4f} (SE: {std_err_acc:.4f})")
+    print(f"Average ROC-AUC: {avg_auc:.4f} (SE: {std_err_auc:.4f})")
+    print(f"Average F1 Score: {avg_f1:.4f} (SE: {std_err_f1:.4f})")
+    print(f"Average Balanced Accuracy: {avg_bal_acc:.4f} (SE: {std_err_bal_acc:.4f})")
+    print(f"Average AUPRC: {avg_auprc:.4f} (SE: {std_err_auprc:.4f})")
