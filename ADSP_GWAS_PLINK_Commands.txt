@@ -1,0 +1,30 @@
+# ADSP GWAS/PCA 
+
+# convert VCF to bed (no need to filter in this case, looks like it was already done)
+plink2 --vcf ADSP_keep_quest_comb_cohorts/ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts.vcf --make-bed --out ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts
+
+# Set missing variant IDs
+plink --bfile ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts --set-missing-var-ids '@:#:$1:$2' --make-bed --out ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing; done
+
+# PLINK LD pruning
+plink --bfile ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing --maf 0.1 --indep-pairwise 100 10 0.15 --out ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing_pruned
+
+plink --bfile ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing --maf 0.1 --extract ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing_pruned.prune.in --make-bed --out ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing_pruned_PCA_original
+
+# PLINK PCA
+
+awk '{print $1,$1":"$4,$3,$4,$5,$6}' ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing_pruned_PCA_original.bim > ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing_pruned_PCA.bim
+
+plink_pca.sh -b ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing_pruned_PCA -g -p ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing_pruned_PCA_no1KG
+
+plink_pca.sh -b ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing_pruned_PCA -S -R ~/group/datasets/1KG_Phase3/plink_files/plink_raw_files/b38/biallelic_autosomes -p ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing_pruned_PCA_1KG
+
+plink_pca.sh -b ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing_pruned_PCA -g -p ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing_pruned_PCA_no1KG
+
+# RUN GWAS NOT ON PRUNED SAMPLES
+# Check Feature_Agg notebook for the covariates file 
+
+plink2 --glm hide-covar cols=+beta,+a1freq --bfile ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing --allow-no-sex --pheno ADSP_PCs_agesex_target.txt --pheno-name ALZ_STATUS --covar ADSP_PCs_agesex_target.txt --covar-name Age_baseline,Sex,PC1,PC2,PC3,PC4,PC5 --covar-variance-standardize Age_baseline Sex PC1 PC2 PC3 PC4 PC5 --adjust --out ADSP_keep_quest_comb_cohorts_GWAS_age_sex_PC1-5
+
+# Use GWAS_Manhattan notebook to create Manhattan Plot for GWAS results
+

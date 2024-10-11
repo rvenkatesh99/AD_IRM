@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings('ignore')
 
-def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, output_file, feature_selection_method, 
+def train_elasticnet_with_feature_selection(X_train, X_val, X_test, y_train, y_val, y_test, output_file, feature_selection_method, 
                                             use_feature_selection=True, 
                                             variance_threshold=0.8, verbose=True, n_jobs=-1):
     
@@ -32,6 +32,7 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
             selector = SelectFromModel(lasso, prefit=True, threshold=1e-5)
             X_train = selector.transform(X_train)
             X_val = selector.transform(X_val)
+            X_test = selector.transform(X_test)
             
             # Log the number of features selected
             with open(f'{output_file}.txt', "a") as f:
@@ -42,6 +43,7 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
             pca = PCA(n_components=variance_threshold, random_state=42)
             X_train = pca.fit_transform(X_train)
             X_val = pca.transform(X_val)
+            X_test = pca.transform(X_test)
             
             # Number of components chosen to explain 80% variance
             n_components_selected = pca.n_components_
@@ -133,7 +135,6 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
     plt.savefig(f'{output_file}_Training_ROC.png')
     plt.show()
 
-
     # Validate the best model on the validation set
     y_val_pred = best_model.predict(X_val)
     y_val_pred_prob = best_model.predict_proba(X_val)[:, 1]  # Probabilities for ROC-AUC
@@ -149,16 +150,15 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
 
     # Write validation results to output file
     with open(f'{output_file}.txt', "a") as f:
-        f.write(f"Best Model from GridSearch: {grid_search.best_params_}\n")
         f.write(f"Validation Accuracy: {val_accuracy:.4f}\n")
         f.write(f"Validation ROC-AUC Score: {val_roc_auc:.4f}\n")
         f.write(f"Validation F1 Score: {val_f1:.4f}\n")
         f.write(f"Validation Balanced Accuracy: {val_balanced_acc:.4f}\n")
         f.write(f"Validation AUPRC: {val_auprc:.4f}\n")
-        f.write(f"Confusion Matrix:\n{conf_matrix}\n")
-        f.write(f"Classification Report:\n{json.dumps(class_report, indent=4)}\n")
+        f.write(f"Validation Confusion Matrix:\n{conf_matrix}\n")
+        f.write(f"Validation Classification Report:\n{json.dumps(class_report, indent=4)}\n")
 
-    # Plot ROC Curve
+    # Plot ROC Curve for validation set
     fpr, tpr, _ = roc_curve(y_val, y_val_pred_prob)
     plt.figure()
     plt.plot(fpr, tpr, color='blue', label=f'ROC Curve (area = {val_roc_auc:.4f})')
@@ -172,100 +172,217 @@ def train_elasticnet_with_feature_selection(X_train, X_val, y_train, y_val, outp
     plt.savefig(f'{output_file}_Validation_ROC.png')
     plt.show()
 
-    return val_accuracy, val_roc_auc, val_f1, val_balanced_acc, val_auprc, best_model, selector
+    # Test the best model on the test set
+    y_test_pred = best_model.predict(X_test)
+    y_test_pred_prob = best_model.predict_proba(X_test)[:, 1]
+
+    # Test set metrics
+    test_accuracy = accuracy_score(y_test, y_test_pred)
+    test_roc_auc = roc_auc_score(y_test, y_test_pred_prob)
+    test_f1 = f1_score(y_test, y_test_pred)
+    test_balanced_acc = balanced_accuracy_score(y_test, y_test_pred)
+    test_auprc = average_precision_score(y_test, y_test_pred_prob)
+    test_conf_matrix = confusion_matrix(y_test, y_test_pred)
+    test_class_report = classification_report(y_test, y_test_pred, output_dict=True)
+
+    # Write test results to output file
+    with open(f'{output_file}.txt', "a") as f:
+        f.write(f"Test Accuracy: {test_accuracy:.4f}\n")
+        f.write(f"Test ROC-AUC Score: {test_roc_auc:.4f}\n")
+        f.write(f"Test F1 Score: {test_f1:.4f}\n")
+        f.write(f"Test Balanced Accuracy: {test_balanced_acc:.4f}\n")
+        f.write(f"Test AUPRC: {test_auprc:.4f}\n")
+        f.write(f"Test Confusion Matrix:\n{test_conf_matrix}\n")
+        f.write(f"Test Classification Report:\n{json.dumps(test_class_report, indent=4)}\n")
+
+    # Plot ROC Curve for test set
+    fpr, tpr, _ = roc_curve(y_test, y_test_pred_prob)
+    plt.figure()
+    plt.plot(fpr, tpr, color='blue', label=f'ROC Curve (area = {test_roc_auc:.4f})')
+    plt.plot([0, 1], [0, 1], color='red', linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Test Set Receiver Operating Characteristic')
+    plt.legend(loc="lower right")
+    plt.savefig(f'{output_file}_Test_ROC.png')
+    plt.show()
+
+    return (train_accuracy, train_roc_auc, train_f1, train_balanced_acc, train_auprc,
+            val_accuracy, val_roc_auc, val_f1, val_balanced_acc, val_auprc,
+            test_accuracy, test_roc_auc, test_f1, test_balanced_acc, test_auprc, best_model, selector)
+
 
 
 # Main function to run multiple iterations with different splits
-def run_multiple_iterations(input_file, output_file, use_feature_selection, feature_selection_method, 
-                            iterations=10, verbose=True, n_jobs=-1):
-    # Load and preprocess data
-    df = pd.read_csv(input_file)
+def train_multiple_iterations(X, y, output_file, feature_selection_method, 
+                              n_iterations=10, use_feature_selection=True, variance_threshold=0.8, verbose=True, test_size=0.2):
+    results = []
 
-    # Remove columns starting with 'ADSP'
-    for column in df.columns:
-        if df[column].astype(str).str.startswith('A').any():
-            df = df.drop(columns=[column])
+    # Initialize cumulative metrics
+    cumulative_train_accuracy = 0
+    cumulative_train_roc_auc = 0
+    cumulative_train_f1 = 0
+    cumulative_train_balanced_acc = 0
+    cumulative_train_auprc = 0
+    
+    cumulative_val_accuracy = 0
+    cumulative_val_roc_auc = 0
+    cumulative_val_f1 = 0
+    cumulative_val_balanced_acc = 0
+    cumulative_val_auprc = 0
+    
+    cumulative_test_accuracy = 0
+    cumulative_test_roc_auc = 0
+    cumulative_test_f1 = 0
+    cumulative_test_balanced_acc = 0
+    cumulative_test_auprc = 0
 
-    X = df.iloc[:, :-1].values  # All columns except the last (target)
-    y = df.iloc[:, -1].values   # Last column is the target
-
-    # Initialize lists to store metrics across iterations
-    accuracies = []
-    aucs = []
-    f1_scores = []
-    balanced_accuracies = []
-    auprcs = []
-
-    for i in range(iterations):
-        # Train-test split
-        X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=0.2, random_state=42 + i)
-        X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=0.25, random_state=42 + i)
-
-        # Standardize the data
+    for iteration in range(1, n_iterations + 1):
+        # Split the data into training, validation, and test sets
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=iteration)
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.25, random_state=iteration) # 0.25 x 0.8 = 0.2
+         
+        # Standardize the features
         scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train)
         X_val_scaled = scaler.transform(X_val)
         X_test_scaled = scaler.transform(X_test)
 
-        # Train the model
-        val_acc, val_roc_auc, val_f1, val_bal_acc, val_auprc, best_model, selector = train_elasticnet_with_feature_selection(
-            X_train_scaled, X_val_scaled, y_train, y_val, 
-            output_file=output_file,
-            feature_selection_method=feature_selection_method, 
-            use_feature_selection=use_feature_selection, 
-            verbose=verbose, n_jobs=n_jobs)
+        # Train the model and get metrics
+        (train_accuracy, train_roc_auc, train_f1, train_balanced_acc, train_auprc,
+         val_accuracy, val_roc_auc, val_f1, val_balanced_acc, val_auprc,
+         test_accuracy, test_roc_auc, test_f1, test_balanced_acc, test_auprc, best_model, selector) = \
+            train_elasticnet_with_feature_selection(X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, output_file, 
+                                                    feature_selection_method, use_feature_selection, 
+                                                    variance_threshold, verbose)
+        
+        # Accumulate metrics for averaging
+        cumulative_train_accuracy += train_accuracy
+        cumulative_train_roc_auc += train_roc_auc
+        cumulative_train_f1 += train_f1
+        cumulative_train_balanced_acc += train_balanced_acc
+        cumulative_train_auprc += train_auprc
+        
+        cumulative_val_accuracy += val_accuracy
+        cumulative_val_roc_auc += val_roc_auc
+        cumulative_val_f1 += val_f1
+        cumulative_val_balanced_acc += val_balanced_acc
+        cumulative_val_auprc += val_auprc
+        
+        cumulative_test_accuracy += test_accuracy
+        cumulative_test_roc_auc += test_roc_auc
+        cumulative_test_f1 += test_f1
+        cumulative_test_balanced_acc += test_balanced_acc
+        cumulative_test_auprc += test_auprc
 
-        # Store metrics
-        accuracies.append(val_acc)
-        aucs.append(val_roc_auc)
-        f1_scores.append(val_f1)
-        balanced_accuracies.append(val_bal_acc)
-        auprcs.append(val_auprc)
+        # Store the results for this iteration
+        results.append({
+            'iteration': iteration,
+            'train_accuracy': train_accuracy,
+            'train_roc_auc': train_roc_auc,
+            'train_f1': train_f1,
+            'train_balanced_acc': train_balanced_acc,
+            'train_auprc': train_auprc,
+            'val_accuracy': val_accuracy,
+            'val_roc_auc': val_roc_auc,
+            'val_f1': val_f1,
+            'val_balanced_acc': val_balanced_acc,
+            'val_auprc': val_auprc,
+            'test_accuracy': test_accuracy,
+            'test_roc_auc': test_roc_auc,
+            'test_f1': test_f1,
+            'test_balanced_acc': test_balanced_acc,
+            'test_auprc': test_auprc
+        })
 
-    # Calculate mean and standard error for each metric
-    avg_acc = np.mean(accuracies)
-    std_err_acc = np.std(accuracies) / np.sqrt(iterations)
+    # Calculate averages
+    avg_train_accuracy = cumulative_train_accuracy / n_iterations
+    avg_train_roc_auc = cumulative_train_roc_auc / n_iterations
+    avg_train_f1 = cumulative_train_f1 / n_iterations
+    avg_train_balanced_acc = cumulative_train_balanced_acc / n_iterations
+    avg_train_auprc = cumulative_train_auprc / n_iterations
+
+    avg_val_accuracy = cumulative_val_accuracy / n_iterations
+    avg_val_roc_auc = cumulative_val_roc_auc / n_iterations
+    avg_val_f1 = cumulative_val_f1 / n_iterations
+    avg_val_balanced_acc = cumulative_val_balanced_acc / n_iterations
+    avg_val_auprc = cumulative_val_auprc / n_iterations
+
+    avg_test_accuracy = cumulative_test_accuracy / n_iterations
+    avg_test_roc_auc = cumulative_test_roc_auc / n_iterations
+    avg_test_f1 = cumulative_test_f1 / n_iterations
+    avg_test_balanced_acc = cumulative_test_balanced_acc / n_iterations
+    avg_test_auprc = cumulative_test_auprc / n_iterations
+
+    # Store averages in the results as the last entry
+    results.append({
+        'iteration': 'Average',
+        'train_accuracy': avg_train_accuracy,
+        'train_roc_auc': avg_train_roc_auc,
+        'train_f1': avg_train_f1,
+        'train_balanced_acc': avg_train_balanced_acc,
+        'train_auprc': avg_train_auprc,
+        'val_accuracy': avg_val_accuracy,
+        'val_roc_auc': avg_val_roc_auc,
+        'val_f1': avg_val_f1,
+        'val_balanced_acc': avg_val_balanced_acc,
+        'val_auprc': avg_val_auprc,
+        'test_accuracy': avg_test_accuracy,
+        'test_roc_auc': avg_test_roc_auc,
+        'test_f1': avg_test_f1,
+        'test_balanced_acc': avg_test_balanced_acc,
+        'test_auprc': avg_test_auprc
+    })
+
+    # Convert results to a DataFrame
+    df_results = pd.DataFrame(results)
+
+    # Save to CSV
+    df_results.to_csv(f'{output_file}.csv', index=False)
+
+    return df_results
+
+def main(input_data_file, output_file, feature_selection_method, n_iterations=10, test_size=0.2, use_feature_selection=True, variance_threshold=0.8):
+    # Load input data (assuming input_data_file is a CSV with X as features and y as target)
+    df = pd.read_csv(input_data_file)
+
+    for column in df.columns:
+        if df[column].astype(str).str.startswith('A').any():
+            df = df.drop(columns=[column])
+
+    # Assume the last column is the target variable and the rest are features
+    X = df.iloc[:, :-1]
+    y = df.iloc[:, -1]
     
-    avg_auc = np.mean(aucs)
-    std_err_auc = np.std(aucs) / np.sqrt(iterations)
-
-    avg_f1 = np.mean(f1_scores)
-    std_err_f1 = np.std(f1_scores) / np.sqrt(iterations)
-
-    avg_bal_acc = np.mean(balanced_accuracies)
-    std_err_bal_acc = np.std(balanced_accuracies) / np.sqrt(iterations)
-
-    avg_auprc = np.mean(auprcs)
-    std_err_auprc = np.std(auprcs) / np.sqrt(iterations)
-
-    # Output results to file
-    with open(f'{output_file}.txt', "a") as f:
-        f.write(f"Results across {iterations} iterations:\n")
-        f.write(f"Average Accuracy: {avg_acc:.4f} (SE: {std_err_acc:.4f})\n")
-        f.write(f"Average ROC-AUC: {avg_auc:.4f} (SE: {std_err_auc:.4f})\n")
-        f.write(f"Average F1 Score: {avg_f1:.4f} (SE: {std_err_f1:.4f})\n")
-        f.write(f"Average Balanced Accuracy: {avg_bal_acc:.4f} (SE: {std_err_bal_acc:.4f})\n")
-        f.write(f"Average AUPRC: {avg_auprc:.4f} (SE: {std_err_auprc:.4f})\n")
-
-    # Return averaged metrics
-    return avg_acc, std_err_acc, avg_auc, std_err_auc, avg_f1, std_err_f1, avg_bal_acc, std_err_bal_acc, avg_auprc, std_err_auprc
+    # Call the train_multiple_iterations function
+    results_df = train_multiple_iterations(X, y, output_file, feature_selection_method, 
+                                           n_iterations=n_iterations, 
+                                           use_feature_selection=use_feature_selection, 
+                                           variance_threshold=variance_threshold, 
+                                           test_size=test_size)
+    
+    # Output the results as a confirmation
+    print(f'Results saved to {output_file}.csv')
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 5:
-        print("Usage: python train_elasticnet_logistic.py <input_csv_file> <output_txt_file> <use_feature_selection> <feature_selection_method>")
+    # Make sure the right number of arguments is passed
+    if len(sys.argv) < 5:
+        print("Usage: python script_name.py <input_csv_file> <output_file> <feature_selection_method> <use_feature_selection> [n_iterations] [test_size] [variance_threshold]")
         sys.exit(1)
 
-    input_file = sys.argv[1]
+    # Required arguments from the command line
+    input_data_file = sys.argv[1]
     output_file = sys.argv[2]
-    use_feature_selection = bool(int(sys.argv[3]))  # Pass 1 for True, 0 for False
-    feature_selection_method = str(sys.argv[4])
-    iterations = 10  # You can modify the number of iterations here
+    use_feature_selection = bool(int(sys.argv[3])) # 1 or 0 for True/False
+    feature_selection_method = sys.argv[4]  
 
-    avg_acc, std_err_acc, avg_auc, std_err_auc, avg_f1, std_err_f1, avg_bal_acc, std_err_bal_acc, avg_auprc, std_err_auprc = run_multiple_iterations(input_file, output_file, use_feature_selection, feature_selection_method, iterations=iterations)
+    # Optional arguments with default values
+    n_iterations = int(sys.argv[5]) if len(sys.argv) > 5 else 10
+    test_size = float(sys.argv[6]) if len(sys.argv) > 6 else 0.2
+    variance_threshold = float(sys.argv[7]) if len(sys.argv) > 7 else 0.8
     
-    print(f"Average Accuracy: {avg_acc:.4f} (SE: {std_err_acc:.4f})")
-    print(f"Average ROC-AUC: {avg_auc:.4f} (SE: {std_err_auc:.4f})")
-    print(f"Average F1 Score: {avg_f1:.4f} (SE: {std_err_f1:.4f})")
-    print(f"Average Balanced Accuracy: {avg_bal_acc:.4f} (SE: {std_err_bal_acc:.4f})")
-    print(f"Average AUPRC: {avg_auprc:.4f} (SE: {std_err_auprc:.4f})")
+    # Call the main function with command-line arguments
+    main(input_data_file, output_file, feature_selection_method, n_iterations, test_size, use_feature_selection, variance_threshold)
