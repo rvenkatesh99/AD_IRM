@@ -13,3 +13,5 @@ Circos/twas_data_ad
 Circos/ADSP_keep_quest_comb_cohorts_GWAS_age_sex_PC1-5.ALZ_STATUS.glm.logistic.hybrid
 Circos/ADSP_PWAS_ARIC.all_tissues_pos.tsv
 Circos/ADSP_TWAS_GTEx.all_tissues_pos.tsv
+Model_Performance.xlsx
+train_elasticnet_genomics.py
