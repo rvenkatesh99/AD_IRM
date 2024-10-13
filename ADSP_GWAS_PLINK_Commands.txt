@@ -24,7 +24,7 @@ plink_pca.sh -b ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL
 # RUN GWAS NOT ON PRUNED SAMPLES
 # Check Feature_Agg notebook for the covariates file 
 
-plink2 --glm hide-covar cols=+beta,+a1freq --bfile ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing --allow-no-sex --pheno ADSP_PCs_agesex_target.txt --pheno-name ALZ_STATUS --covar ADSP_PCs_agesex_target.txt --covar-name Age_baseline,Sex,PC1,PC2,PC3,PC4,PC5 --covar-variance-standardize Age_baseline Sex PC1 PC2 PC3 PC4 PC5 --adjust --out ADSP_keep_quest_comb_cohorts_GWAS_age_sex_PC1-5
+plink2 --glm hide-covar cols=+beta,+a1freq --bfile ADSP_mac20_noduplicates_geno0.01_mind0.05_maf0.01_hwe1-15_chrALL_keep_quest_comb_cohorts_nomissing --allow-no-sex --pheno ADSP_PCs_agesex_target.txt --pheno-name ALZ_STATUS --covar ADSP_PCs_agesex_target.txt --covar-name Age_harmonized,Sex,PC1,PC2,PC3,PC4,PC5 --covar-variance-standardize Age_harmonized Sex PC1 PC2 PC3 PC4 PC5 --adjust --out ADSP_keep_quest_comb_cohorts_GWAS_age_sex_PC1-5_fin
 
 # Use GWAS_Manhattan notebook to create Manhattan Plot for GWAS results
 
