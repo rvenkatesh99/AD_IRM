@@ -73,8 +73,8 @@ dim(twas_gr5)
 #                               circos circus                                  #
 ################################################################################
 ```{r}
-png(file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/AD_WAS_circos.png"),  
-    width = 5,
+png(file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/AD_WAS_circos_fin.png"),  
+    width = 6.15,
     height= 5.5,
     units = "in",
     res = 1200)
@@ -197,7 +197,7 @@ circos.yaxis(side = "left",
 
 # PWAS manhattan plot
 circos.genomicTrack(pwas_gr5,
-                    ylim = c(-30, 0),
+                    ylim = c(-10, 0),
                     panel.fun = function(region, value, ...) {
                       circos.genomicPoints(region,
                                            value,
@@ -215,8 +215,8 @@ circos.genomicTrack(pwas_gr5,
                     bg.col = "gray96")
 circos.yaxis(side = "left",
              at = c(floor(min(pwas_gr5$value1)),
-                    -5, -10, -15, -20, -25, -30),
-             labels = c("", 5, 10, 15, 20, 25, 30),
+                    -5, -10),
+             labels = c("", 5, 10),
              #labels = c(floor(min(mega.bed$value1)),
              #         10, 20, 30),
              sector.index = get.all.sector.index()[1],
@@ -251,8 +251,8 @@ legend3 = Legend(labels = c("EA", "AA"),
                  title_gp = gpar(fontsize = 4))
 
 draw(legend1, x = unit(4, "mm"), y = unit(1, "mm"), just = c("left", "bottom"))
-draw(legend3, x = unit(90, "mm"), y = unit(1, "mm"), just = c("left", "bottom"))
-draw(legend2, x = unit(108, "mm"), y = unit(1, "mm"), just = c("left", "bottom"))
+draw(legend3, x = unit(115, "mm"), y = unit(1, "mm"), just = c("left", "bottom"))
+draw(legend2, x = unit(133, "mm"), y = unit(1, "mm"), just = c("left", "bottom"))
 
 dev.off()
 ```

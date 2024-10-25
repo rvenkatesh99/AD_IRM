@@ -86,10 +86,10 @@ format_manhattan <- function (data, annotations,
 
 # inputs 
 # Four input files here
-gwas.path <- file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/ADSP_keep_quest_comb_cohorts_GWAS_age_sex_PC1-5.ALZ_STATUS.glm.logistic.hybrid")
-twas.path <- file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/ADSP_TWAS_GTEx.all_tissues_pos.tsv")
-pwas.path <- file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/ADSP_PWAS_ARIC.all_tissues_pos.tsv")
-anno.path <- file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/AD_annotations.tsv")
+gwas.path <- file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/ADSP_keep_quest_comb_cohorts_GWAS_age_sex_PC1-5_fin.ALZ_STATUS.glm.logistic.hybrid")
+twas.path <- file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/ADSP_TWAS_GTEx.all_tissues_pos_fin.tsv")
+pwas.path <- file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/ADSP_PWAS_ARIC.all_tissues_pos_fin.tsv")
+anno.path <- file.path("~/Desktop/Thesis_Work/Projects/AD_WAS/Circos/AD_annotations_fin.tsv")
 
 # pheno.path <-file.path("/project/ssverma_shared/projects/CardiacPET/REGENIE_SEX_STRAT_WITH_BATCH/Meta/Output/CMVD_ALL.global_reserve_merged.meta")
 # anno.path <- file.path("/project/ssverma_shared/projects/CardiacPET/REGENIE_SEX_STRAT_WITH_BATCH/Summary/sumstats_all_replication_genes_CAD.csv")

@@ -5,7 +5,8 @@ import numpy as np
 import json
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_auc_score, roc_curve, f1_score, balanced_accuracy_score, average_precision_score
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_auc_score, roc_curve, f1_score, \
+    balanced_accuracy_score, average_precision_score, precision_score, recall_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import ElasticNetCV
 from sklearn.pipeline import make_pipeline
@@ -51,16 +52,6 @@ def train_elasticnet_with_feature_selection(X_train, X_val, X_test, y_train, y_v
             # Log the number of components selected
             with open(f'{output_file}.txt', "a") as f:
                 f.write(f'Selected {n_components_selected} principal components explaining {variance_threshold * 100}% variance using PCA\n')
-            
-            # Visualize the first two principal components
-            plt.figure(figsize=(10, 7))
-            plt.scatter(X_train[:, 0], X_train[:, 1], c=y_train, cmap='viridis', edgecolor='k', s=50)
-            plt.xlabel('First Principal Component')
-            plt.ylabel('Second Principal Component')
-            plt.title('PCA - First two principal components')
-            plt.colorbar(label='Class Label')
-            plt.savefig(f'{output_file}_pca_visualization.png')
-            plt.show()
 
             # Generate Scree Plot
             plt.figure(figsize=(10, 7))
@@ -110,6 +101,8 @@ def train_elasticnet_with_feature_selection(X_train, X_val, X_test, y_train, y_v
     train_auprc = average_precision_score(y_train, y_train_pred_prob)
     train_conf_matrix = confusion_matrix(y_train, y_train_pred)
     train_class_report = classification_report(y_train, y_train_pred, output_dict=True)
+    train_precision = precision_score(y_train, y_train_pred)
+    train_recall = recall_score(y_train, y_train_pred)
 
     # Write training results to output file
     with open(f'{output_file}.txt', "a") as f:
@@ -120,6 +113,8 @@ def train_elasticnet_with_feature_selection(X_train, X_val, X_test, y_train, y_v
         f.write(f"Training AUPRC: {train_auprc:.4f}\n")
         f.write(f"Training Confusion Matrix:\n{train_conf_matrix}\n")
         f.write(f"Training Classification Report:\n{json.dumps(train_class_report, indent=4)}\n")
+        f.write(f"Training Precision: {train_precision:.4f}\n")
+        f.write(f"Training Recall: {train_recall:.4f}\n")
 
     # Plot ROC Curve for training set
     fpr, tpr, _ = roc_curve(y_train, y_train_pred_prob)
@@ -145,8 +140,10 @@ def train_elasticnet_with_feature_selection(X_train, X_val, X_test, y_train, y_v
     val_f1 = f1_score(y_val, y_val_pred)
     val_balanced_acc = balanced_accuracy_score(y_val, y_val_pred)
     val_auprc = average_precision_score(y_val, y_val_pred_prob)
-    conf_matrix = confusion_matrix(y_val, y_val_pred)
-    class_report = classification_report(y_val, y_val_pred, output_dict=True)
+    val_conf_matrix = confusion_matrix(y_val, y_val_pred)
+    val_class_report = classification_report(y_val, y_val_pred, output_dict=True)
+    val_precision = precision_score(y_val, y_val_pred)
+    val_recall = recall_score(y_val, y_val_pred)
 
     # Write validation results to output file
     with open(f'{output_file}.txt', "a") as f:
@@ -155,8 +152,10 @@ def train_elasticnet_with_feature_selection(X_train, X_val, X_test, y_train, y_v
         f.write(f"Validation F1 Score: {val_f1:.4f}\n")
         f.write(f"Validation Balanced Accuracy: {val_balanced_acc:.4f}\n")
         f.write(f"Validation AUPRC: {val_auprc:.4f}\n")
-        f.write(f"Validation Confusion Matrix:\n{conf_matrix}\n")
-        f.write(f"Validation Classification Report:\n{json.dumps(class_report, indent=4)}\n")
+        f.write(f"Validation Confusion Matrix:\n{val_conf_matrix}\n")
+        f.write(f"Validation Classification Report:\n{json.dumps(val_class_report, indent=4)}\n")
+        f.write(f"Validation Precision: {val_precision:.4f}\n")
+        f.write(f"Validation Recall: {val_recall:.4f}\n")
 
     # Plot ROC Curve for validation set
     fpr, tpr, _ = roc_curve(y_val, y_val_pred_prob)
@@ -184,6 +183,8 @@ def train_elasticnet_with_feature_selection(X_train, X_val, X_test, y_train, y_v
     test_auprc = average_precision_score(y_test, y_test_pred_prob)
     test_conf_matrix = confusion_matrix(y_test, y_test_pred)
     test_class_report = classification_report(y_test, y_test_pred, output_dict=True)
+    test_precision = precision_score(y_test, y_test_pred)
+    test_recall = recall_score(y_test, y_test_pred)
 
     # Write test results to output file
     with open(f'{output_file}.txt', "a") as f:
@@ -194,6 +195,8 @@ def train_elasticnet_with_feature_selection(X_train, X_val, X_test, y_train, y_v
         f.write(f"Test AUPRC: {test_auprc:.4f}\n")
         f.write(f"Test Confusion Matrix:\n{test_conf_matrix}\n")
         f.write(f"Test Classification Report:\n{json.dumps(test_class_report, indent=4)}\n")
+        f.write(f"Test Precision: {test_precision:.4f}\n")
+        f.write(f"Test Recall: {test_recall:.4f}\n")
 
     # Plot ROC Curve for test set
     fpr, tpr, _ = roc_curve(y_test, y_test_pred_prob)
@@ -209,9 +212,10 @@ def train_elasticnet_with_feature_selection(X_train, X_val, X_test, y_train, y_v
     plt.savefig(f'{output_file}_Test_ROC.png')
     plt.show()
 
-    return (train_accuracy, train_roc_auc, train_f1, train_balanced_acc, train_auprc,
-            val_accuracy, val_roc_auc, val_f1, val_balanced_acc, val_auprc,
-            test_accuracy, test_roc_auc, test_f1, test_balanced_acc, test_auprc, best_model, selector)
+    return (train_accuracy, train_roc_auc, train_f1, train_balanced_acc, train_auprc, train_precision, train_recall,
+            val_accuracy, val_roc_auc, val_f1, val_balanced_acc, val_auprc, val_precision, val_recall,
+            test_accuracy, test_roc_auc, test_f1, test_balanced_acc, test_auprc, test_precision, test_recall,
+            best_model, selector)
 
 
 
@@ -226,18 +230,24 @@ def train_multiple_iterations(X, y, output_file, feature_selection_method,
     cumulative_train_f1 = 0
     cumulative_train_balanced_acc = 0
     cumulative_train_auprc = 0
+    cumulative_train_precision = 0
+    cumulative_train_recall = 0
     
     cumulative_val_accuracy = 0
     cumulative_val_roc_auc = 0
     cumulative_val_f1 = 0
     cumulative_val_balanced_acc = 0
     cumulative_val_auprc = 0
+    cumulative_val_precision = 0
+    cumulative_val_recall = 0
     
     cumulative_test_accuracy = 0
     cumulative_test_roc_auc = 0
     cumulative_test_f1 = 0
     cumulative_test_balanced_acc = 0
     cumulative_test_auprc = 0
+    cumulative_test_precision = 0
+    cumulative_test_recall = 0
 
     for iteration in range(1, n_iterations + 1):
         # Split the data into training, validation, and test sets
@@ -251,9 +261,10 @@ def train_multiple_iterations(X, y, output_file, feature_selection_method,
         X_test_scaled = scaler.transform(X_test)
 
         # Train the model and get metrics
-        (train_accuracy, train_roc_auc, train_f1, train_balanced_acc, train_auprc,
-         val_accuracy, val_roc_auc, val_f1, val_balanced_acc, val_auprc,
-         test_accuracy, test_roc_auc, test_f1, test_balanced_acc, test_auprc, best_model, selector) = \
+        (train_accuracy, train_roc_auc, train_f1, train_balanced_acc, train_auprc, train_precision, train_recall,
+         val_accuracy, val_roc_auc, val_f1, val_balanced_acc, val_auprc, val_precision, val_recall,
+         test_accuracy, test_roc_auc, test_f1, test_balanced_acc, test_auprc, test_precision, test_recall,
+         best_model, selector) = \
             train_elasticnet_with_feature_selection(X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, output_file, 
                                                     feature_selection_method, use_feature_selection, 
                                                     variance_threshold, verbose)
@@ -264,18 +275,24 @@ def train_multiple_iterations(X, y, output_file, feature_selection_method,
         cumulative_train_f1 += train_f1
         cumulative_train_balanced_acc += train_balanced_acc
         cumulative_train_auprc += train_auprc
+        cumulative_train_precision += train_precision
+        cumulative_train_recall += train_recall
         
         cumulative_val_accuracy += val_accuracy
         cumulative_val_roc_auc += val_roc_auc
         cumulative_val_f1 += val_f1
         cumulative_val_balanced_acc += val_balanced_acc
         cumulative_val_auprc += val_auprc
+        cumulative_val_precision += val_precision
+        cumulative_val_recall += val_recall
         
         cumulative_test_accuracy += test_accuracy
         cumulative_test_roc_auc += test_roc_auc
         cumulative_test_f1 += test_f1
         cumulative_test_balanced_acc += test_balanced_acc
         cumulative_test_auprc += test_auprc
+        cumulative_test_precision += test_precision
+        cumulative_test_recall += test_recall
 
         # Store the results for this iteration
         results.append({
@@ -285,16 +302,22 @@ def train_multiple_iterations(X, y, output_file, feature_selection_method,
             'train_f1': train_f1,
             'train_balanced_acc': train_balanced_acc,
             'train_auprc': train_auprc,
+            'train_precision': train_precision,
+            'train_recall': train_recall,
             'val_accuracy': val_accuracy,
             'val_roc_auc': val_roc_auc,
             'val_f1': val_f1,
             'val_balanced_acc': val_balanced_acc,
             'val_auprc': val_auprc,
+            'val_precision': val_precision,
+            'val_recall': val_recall,
             'test_accuracy': test_accuracy,
             'test_roc_auc': test_roc_auc,
             'test_f1': test_f1,
             'test_balanced_acc': test_balanced_acc,
-            'test_auprc': test_auprc
+            'test_auprc': test_auprc,
+            'test_precision': test_precision,
+            'test_recall': test_recall
         })
 
     # Calculate averages
@@ -303,18 +326,24 @@ def train_multiple_iterations(X, y, output_file, feature_selection_method,
     avg_train_f1 = cumulative_train_f1 / n_iterations
     avg_train_balanced_acc = cumulative_train_balanced_acc / n_iterations
     avg_train_auprc = cumulative_train_auprc / n_iterations
+    avg_train_precision = cumulative_train_precision / n_iterations
+    avg_train_recall = cumulative_train_recall / n_iterations
 
     avg_val_accuracy = cumulative_val_accuracy / n_iterations
     avg_val_roc_auc = cumulative_val_roc_auc / n_iterations
     avg_val_f1 = cumulative_val_f1 / n_iterations
     avg_val_balanced_acc = cumulative_val_balanced_acc / n_iterations
     avg_val_auprc = cumulative_val_auprc / n_iterations
+    avg_val_precision = cumulative_val_precision / n_iterations
+    avg_val_recall = cumulative_val_recall / n_iterations
 
     avg_test_accuracy = cumulative_test_accuracy / n_iterations
     avg_test_roc_auc = cumulative_test_roc_auc / n_iterations
     avg_test_f1 = cumulative_test_f1 / n_iterations
     avg_test_balanced_acc = cumulative_test_balanced_acc / n_iterations
     avg_test_auprc = cumulative_test_auprc / n_iterations
+    avg_test_precision = cumulative_test_precision / n_iterations
+    avg_test_recall = cumulative_test_recall / n_iterations
 
     # Store averages in the results as the last entry
     results.append({
@@ -324,16 +353,22 @@ def train_multiple_iterations(X, y, output_file, feature_selection_method,
         'train_f1': avg_train_f1,
         'train_balanced_acc': avg_train_balanced_acc,
         'train_auprc': avg_train_auprc,
+        'train_precision': avg_train_precision,
+        'train_recall': avg_train_recall,
         'val_accuracy': avg_val_accuracy,
         'val_roc_auc': avg_val_roc_auc,
         'val_f1': avg_val_f1,
         'val_balanced_acc': avg_val_balanced_acc,
         'val_auprc': avg_val_auprc,
+        'val_precision': avg_val_precision,
+        'val_recall': avg_val_recall,
         'test_accuracy': avg_test_accuracy,
         'test_roc_auc': avg_test_roc_auc,
         'test_f1': avg_test_f1,
         'test_balanced_acc': avg_test_balanced_acc,
-        'test_auprc': avg_test_auprc
+        'test_auprc': avg_test_auprc,
+        'test_precision': avg_test_precision,
+        'test_recall': avg_test_recall
     })
 
     # Convert results to a DataFrame
