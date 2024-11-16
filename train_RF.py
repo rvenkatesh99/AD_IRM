@@ -17,40 +17,73 @@ import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
 
-def plot_clustering(X, y, output_file, set_name='Training'):
-    """
-    Function to perform t-SNE for visualization of clustering and plot the results.
-    """
-    tsne = TSNE(n_components=2, random_state=42)
-    X_embedded = tsne.fit_transform(X)
-    
-    # Plot t-SNE result
-    plt.figure(figsize=(10, 7))
-    sns.scatterplot(x=X_embedded[:, 0], y=X_embedded[:, 1], hue=y, palette='viridis', s=60, alpha=0.8, edgecolor='k')
-    plt.title(f't-SNE Clustering for {set_name} Set')
-    plt.xlabel('t-SNE Component 1')
-    plt.ylabel('t-SNE Component 2')
-    plt.legend(title='Class', loc='best')
-    plt.savefig(f'{output_file}_{set_name}_tSNE_clustering.png')
-    plt.show()
+def train_random_forest_with_feature_selection(X_train, X_val, X_test, y_train, y_val, y_test, output_file, feature_selection_method, 
+                                            use_feature_selection=True, 
+                                            variance_threshold=0.8, verbose=True, n_jobs=-1):
+    selector = None
 
-def train_random_forest(X_train, X_val, X_test, y_train, y_val, y_test, output_file, verbose=True, n_jobs=-1):
-        
-    # Define RandomForestClassifier model
+    # Feature selection using Lasso (L1 regularization) if enabled
+    if use_feature_selection:
+        if feature_selection_method == 'lasso':
+            # Feature selection using Lasso (L1 regularization)
+            lasso = LogisticRegression(penalty='l1', solver='saga', random_state=42, n_jobs=n_jobs, max_iter=500, C=0.1)
+            lasso.fit(X_train, y_train)
+            
+            # Select only the features with non-zero coefficients
+            selector = SelectFromModel(lasso, prefit=True, threshold=1e-5)
+            X_train = selector.transform(X_train)
+            X_val = selector.transform(X_val)
+            X_test = selector.transform(X_test)
+            
+            # Log the number of features selected
+            with open(f'{output_file}.txt', "a") as f:
+                f.write(f'Selected {X_train.shape[1]} features out of {X_train.shape[1]} using Lasso feature selection\n')
+
+        elif feature_selection_method == 'pca':
+            # Feature selection using PCA to retain 80% of variance
+            pca = PCA(n_components=variance_threshold, random_state=42)
+            X_train = pca.fit_transform(X_train)
+            X_val = pca.transform(X_val)
+            X_test = pca.transform(X_test)
+            
+            # Number of components chosen to explain 80% variance
+            n_components_selected = pca.n_components_
+            
+            # Log the number of components selected
+            with open(f'{output_file}.txt', "a") as f:
+                f.write(f'Selected {n_components_selected} principal components explaining {variance_threshold * 100}% variance using PCA\n')
+
+            # Generate Scree Plot
+            plt.figure(figsize=(10, 7))
+            plt.plot(np.arange(1, len(pca.explained_variance_ratio_) + 1), pca.explained_variance_ratio_, marker='o', linestyle='--')
+            plt.xlabel('Principal Component')
+            plt.ylabel('Explained Variance Ratio')
+            plt.title('Scree Plot')
+            plt.savefig(f'{output_file}_scree_plot.png')
+            plt.show()
+
+            # Assign PCA object to selector
+            selector = pca
+
+        else:
+            raise ValueError("Unsupported feature selection method. Use 'lasso' or 'pca'.")
+    else:
+        selector = None
+
+    # Define Random Forest classifier
     model = RandomForestClassifier(random_state=42, n_jobs=n_jobs)
-
-    # Set hyperparameter grid for tuning
+    
+    # Hyperparameter tuning grid
     param_grid = {
-        'n_estimators': [100, 200, 500],  # Number of trees in the forest
-        'max_depth': [10, 50, None],      # Maximum depth of the tree
-        'min_samples_split': [2, 5, 10],  # Minimum samples required to split a node
-        'min_samples_leaf': [1, 2, 4]     # Minimum samples required at a leaf node
+        'n_estimators': [100, 200, 500],
+        'max_depth': [None, 10, 20, 30],
+        'min_samples_split': [2, 5, 10],
+        'min_samples_leaf': [1, 2, 4]
     }
 
-    # Perform grid search with 5-fold cross-validation using validation set
-    grid_search = GridSearchCV(model, param_grid, cv=5, 
-                               scoring='accuracy', verbose=1 if verbose else 0, 
-                               n_jobs=n_jobs)
+    # Perform grid search with 5-fold cross-validation
+    grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5,
+                               scoring='accuracy', verbose=1 if verbose else 0, n_jobs=n_jobs)
     grid_search.fit(X_train, y_train)
 
     # Best model from grid search
@@ -124,11 +157,6 @@ def train_random_forest(X_train, X_val, X_test, y_train, y_val, y_test, output_f
         f.write(f"Test AUPRC: {test_auprc:.4f}\n")
         f.write(f"Test Confusion Matrix:\n{test_conf_matrix}\n")
         f.write(f"Test Classification Report:\n{json.dumps(test_class_report, indent=4)}\n")
-
-    # Plot t-SNE clustering for training, validation, and test sets
-    plot_clustering(X_train, y_train, output_file, set_name='Training')
-    plot_clustering(X_val, y_val, output_file, set_name='Validation')
-    plot_clustering(X_test, y_test, output_file, set_name='Test')
 
     return (train_accuracy, train_roc_auc, train_f1, train_balanced_acc, train_auprc,
             val_accuracy, val_roc_auc, val_f1, val_balanced_acc, val_auprc,
