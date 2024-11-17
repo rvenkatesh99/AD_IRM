@@ -1,4 +1,5 @@
 import sys
+import time
 import os
 import pandas as pd
 import numpy as np
@@ -66,6 +67,7 @@ def train_random_forest_with_feature_selection(X_train_scaled, X_val_scaled, X_t
     X_test_selected = selector.transform(X_test_scaled)
 
     n_selected_features = X_train_selected.shape[1]
+    print("Number of Features:", n_selected_features)
     with open(f'{output_file}.txt', "a") as f:
         f.write(f'Selected {n_selected_features} features\n')
 
@@ -84,13 +86,16 @@ def train_random_forest_with_feature_selection(X_train_scaled, X_val_scaled, X_t
     # Perform randomized search with 5-fold cross-validation
     # grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5,
     #                            scoring='roc_auc', verbose=1 if verbose else 0, n_jobs=-1)
-    random_search = RandomizedSearchCV(estimator=model, param_grid=param_grid, cv=5, random_state=42,
+    random_search = RandomizedSearchCV(estimator=model, param_distributions=param_grid, cv=5, random_state=42,
                                scoring='roc_auc', verbose=1 if verbose else 0, n_jobs=-1)
     random_search.fit(X_train_selected, y_train)
 
     # Best model from grid search
     best_model = random_search.best_estimator_
     print("Best Parameters:", random_search.best_params_)
+
+    with open(f'{output_file}.txt', "a") as f:
+        f.write(f"Best Parameters: {random_search.best_params_}")
 
     # Training performance
     y_train_pred = best_model.predict(X_train_selected)
@@ -190,6 +195,9 @@ def train_multiple_iterations(X, y, output_file, feature_selection_method,
     cumulative_test_auprc = 0
 
     for iteration in range(1, n_iterations + 1):
+        start_time = time.time()
+        with open(f'{output_file}.txt', "a") as f:
+            f.write(f"\start time: {start_time:.4f}\n")
         # Split the data into training, validation, and test sets
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=iteration)
         X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.25, random_state=iteration) # 0.25 x 0.8 = 0.2
@@ -246,6 +254,11 @@ def train_multiple_iterations(X, y, output_file, feature_selection_method,
             'test_balanced_acc': test_balanced_acc,
             'test_auprc': test_auprc
         })
+        
+        end_time = time.time()
+        iteration_time = end_time - start_time
+        with open(f'{output_file}.txt', "a") as f:
+            f.write(f"\Iteration time: {iteration_time:.4f}\n")
 
     # Calculate averages
     avg_train_accuracy = cumulative_train_accuracy / n_iterations
