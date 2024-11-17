@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import json
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_auc_score, roc_curve, \
     f1_score, balanced_accuracy_score, average_precision_score
 from sklearn.preprocessing import StandardScaler
@@ -17,34 +17,19 @@ import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
 
-def train_random_forest_with_feature_selection(X_train, X_val, X_test, y_train, y_val, y_test, output_file, feature_selection_method, 
+def train_random_forest_with_feature_selection(X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, output_file, feature_selection_method, 
                                             use_feature_selection=True, 
                                             variance_threshold=0.8, verbose=True, n_jobs=-1):
     selector = None
 
     # Feature selection using Lasso (L1 regularization) if enabled
     if use_feature_selection:
-        if feature_selection_method == 'lasso':
-            # Feature selection using Lasso (L1 regularization)
-            lasso = LogisticRegression(penalty='l1', solver='saga', random_state=42, n_jobs=n_jobs, max_iter=500, C=0.1)
-            lasso.fit(X_train, y_train)
-            
-            # Select only the features with non-zero coefficients
-            selector = SelectFromModel(lasso, prefit=True, threshold=1e-5)
-            X_train = selector.transform(X_train)
-            X_val = selector.transform(X_val)
-            X_test = selector.transform(X_test)
-            
-            # Log the number of features selected
-            with open(f'{output_file}.txt', "a") as f:
-                f.write(f'Selected {X_train.shape[1]} features out of {X_train.shape[1]} using Lasso feature selection\n')
-
-        elif feature_selection_method == 'pca':
+        if feature_selection_method == 'pca':
             # Feature selection using PCA to retain 80% of variance
             pca = PCA(n_components=variance_threshold, random_state=42)
-            X_train = pca.fit_transform(X_train)
-            X_val = pca.transform(X_val)
-            X_test = pca.transform(X_test)
+            X_train_scaled = pca.fit_transform(X_train_scaled)
+            X_val_scaled = pca.transform(X_val_scaled)
+            X_test_scaled = pca.transform(X_test_scaled)
             
             # Number of components chosen to explain 80% variance
             n_components_selected = pca.n_components_
@@ -70,28 +55,46 @@ def train_random_forest_with_feature_selection(X_train, X_val, X_test, y_train, 
     else:
         selector = None
 
-    # Define Random Forest classifier
-    model = RandomForestClassifier(random_state=42, n_jobs=n_jobs)
+    # Feature selection using Random Forest feature importances
+    feature_selector = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+    feature_selector.fit(X_train_scaled, y_train)
+
+    # Select important features based on feature importance
+    selector = SelectFromModel(feature_selector, threshold="median", prefit=True)
+    X_train_selected = selector.transform(X_train_scaled)
+    X_val_selected = selector.transform(X_val_scaled)
+    X_test_selected = selector.transform(X_test_scaled)
+
+    n_selected_features = X_train_selected.shape[1]
+    with open(f'{output_file}.txt', "a") as f:
+        f.write(f'Selected {n_selected_features} features\n')
+
+    # Train Random Forest on selected features
+    model = RandomForestClassifier(random_state=42, n_jobs=-1, class_weight='balanced')
     
     # Hyperparameter tuning grid
     param_grid = {
-        'n_estimators': [100, 200, 500],
-        'max_depth': [None, 10, 20, 30],
-        'min_samples_split': [2, 5, 10],
-        'min_samples_leaf': [1, 2, 4]
+    'n_estimators': [100, 200, 300],
+    'max_depth': [5, 8, 10],
+    'min_samples_split':  [20, 50, 100],
+    'min_samples_leaf': [10, 20, 50],
+    'max_features': ['sqrt', 'log2', None]  # Limits the number of features considered at each split
     }
 
-    # Perform grid search with 5-fold cross-validation
-    grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5,
-                               scoring='accuracy', verbose=1 if verbose else 0, n_jobs=n_jobs)
-    grid_search.fit(X_train, y_train)
+    # Perform randomized search with 5-fold cross-validation
+    # grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5,
+    #                            scoring='roc_auc', verbose=1 if verbose else 0, n_jobs=-1)
+    random_search = RandomizedSearchCV(estimator=model, param_grid=param_grid, cv=5, random_state=42,
+                               scoring='roc_auc', verbose=1 if verbose else 0, n_jobs=-1)
+    random_search.fit(X_train_selected, y_train)
 
     # Best model from grid search
-    best_model = grid_search.best_estimator_
+    best_model = random_search.best_estimator_
+    print("Best Parameters:", random_search.best_params_)
 
     # Training performance
-    y_train_pred = best_model.predict(X_train)
-    y_train_pred_prob = best_model.predict_proba(X_train)[:, 1]  # Probabilities for ROC-AUC
+    y_train_pred = best_model.predict(X_train_selected)
+    y_train_pred_prob = best_model.predict_proba(X_train_selected)[:, 1]  # Probabilities for ROC-AUC
 
     # Training metrics
     train_accuracy = accuracy_score(y_train, y_train_pred)
@@ -113,8 +116,8 @@ def train_random_forest_with_feature_selection(X_train, X_val, X_test, y_train, 
         f.write(f"Training Classification Report:\n{json.dumps(train_class_report, indent=4)}\n")
 
     # Validate the best model on the validation set
-    y_val_pred = best_model.predict(X_val)
-    y_val_pred_prob = best_model.predict_proba(X_val)[:, 1]  # Probabilities for ROC-AUC
+    y_val_pred = best_model.predict(X_val_selected)
+    y_val_pred_prob = best_model.predict_proba(X_val_selected)[:, 1]  # Probabilities for ROC-AUC
 
     # Validation metrics
     val_accuracy = accuracy_score(y_val, y_val_pred)
@@ -136,8 +139,8 @@ def train_random_forest_with_feature_selection(X_train, X_val, X_test, y_train, 
         f.write(f"Validation Classification Report:\n{json.dumps(val_class_report, indent=4)}\n")
 
     # Test the best model on the test set
-    y_test_pred = best_model.predict(X_test)
-    y_test_pred_prob = best_model.predict_proba(X_test)[:, 1]  # Probabilities for ROC-AUC
+    y_test_pred = best_model.predict(X_test_selected)
+    y_test_pred_prob = best_model.predict_proba(X_test_selected)[:, 1]  # Probabilities for ROC-AUC
 
     # Test metrics
     test_accuracy = accuracy_score(y_test, y_test_pred)
@@ -292,7 +295,8 @@ def train_multiple_iterations(X, y, output_file, feature_selection_method,
     return df_results
 
 
-def main(input_data_file, output_file, n_iterations=10, test_size=0.2, verbose=True):
+def main(input_data_file, output_file, feature_selection_method, n_iterations=10, test_size=0.2, 
+         use_feature_selection=True, variance_threshold=0.8):
     # Load input data (assuming input_data_file is a CSV with X as features and y as target)
     df = pd.read_csv(input_data_file)
 
@@ -305,8 +309,10 @@ def main(input_data_file, output_file, n_iterations=10, test_size=0.2, verbose=T
     y = df.iloc[:, -1]
     
     # Call the train_multiple_iterations function
-    results_df = train_multiple_iterations(X, y, output_file, 
+    results_df = train_multiple_iterations(X, y, output_file, feature_selection_method, 
                                            n_iterations=n_iterations, 
+                                           use_feature_selection=use_feature_selection, 
+                                           variance_threshold=variance_threshold, 
                                            test_size=test_size)
     
     # Output the results as a confirmation
@@ -314,19 +320,20 @@ def main(input_data_file, output_file, n_iterations=10, test_size=0.2, verbose=T
 
 if __name__ == "__main__":
     # Make sure the right number of arguments is passed
-    if len(sys.argv) < 5:
-        print("Usage: python script_name.py <input_csv_file> <output_file> [n_iterations] [test_size] [variance_threshold]")
+    if len(sys.argv) < 4:
+        print("Usage: python script_name.py <input_csv_file> <output_file> <feature_selection_method> <use_feature_selection> [n_iterations] [test_size] [variance_threshold]")
         sys.exit(1)
 
     # Required arguments from the command line
     input_data_file = sys.argv[1]
     output_file = sys.argv[2]
     use_feature_selection = bool(int(sys.argv[3])) # 1 or 0 for True/False
-    feature_selection_method = sys.argv[4]  
 
     # Optional arguments with default values
-    n_iterations = int(sys.argv[5]) if len(sys.argv) > 5 else 10
+    feature_selection_method = sys.argv[4] if len(sys.argv) > 4 else None
+    n_iterations = int(sys.argv[5]) if len(sys.argv) > 5 else 5
     test_size = float(sys.argv[6]) if len(sys.argv) > 6 else 0.2
+    variance_threshold = float(sys.argv[7]) if len(sys.argv) > 7 else 0.8
     
     # Call the main function with command-line arguments
-    main(input_data_file, output_file, n_iterations, test_size)
+    main(input_data_file, output_file, feature_selection_method, n_iterations, test_size, use_feature_selection, variance_threshold)
