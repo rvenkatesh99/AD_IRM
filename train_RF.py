@@ -57,7 +57,7 @@ def train_random_forest_with_feature_selection(X_train_scaled, X_val_scaled, X_t
         selector = None
 
     # Feature selection using Random Forest feature importances
-    feature_selector = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+    feature_selector = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1, class_weight='balanced')
     feature_selector.fit(X_train_scaled, y_train)
 
     # Select important features based on feature importance
@@ -77,8 +77,8 @@ def train_random_forest_with_feature_selection(X_train_scaled, X_val_scaled, X_t
     # Hyperparameter tuning grid
     param_grid = {
     'n_estimators': [100, 200, 300],
-    'max_depth': [5, 8, 10],
-    'min_samples_split':  [20, 50, 100],
+    'max_depth': [3, 5, 8, 10],
+    'min_samples_split':  [20, 50, 100, 120],
     'min_samples_leaf': [10, 20, 50],
     'max_features': ['sqrt', 'log2', None]  # Limits the number of features considered at each split
     }
