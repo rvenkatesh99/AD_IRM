@@ -19,3 +19,13 @@ Circos/AD_WAS_circos_fin.png
 Circos/ADSP_keep_quest_comb_cohorts_GWAS_age_sex_PC1-5_fin.ALZ_STATUS.glm.logistic.hybrid
 Circos/ADSP_PWAS_ARIC.all_tissues_pos_fin.tsv
 Circos/ADSP_TWAS_GTEx.all_tissues_pos_fin.tsv
+GWAS_filtered_pathways.csv
+GWAS.png
+PWAS_filtered_pathways.csv
+PWAS.png
+TWAS_filtered_pathways.csv
+TWAS.png
+enrichr/PTWAS_filtered_pathways.csv
+enrichr/PTWAS.png
+enrichr/PWAS_filtered_pathways_kegg_reactome.csv
+enrichr/TWAS_filtered_pathways_kegg_reactome.csv
