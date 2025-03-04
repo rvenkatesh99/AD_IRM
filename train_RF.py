@@ -52,7 +52,7 @@ def train_random_forest_with_feature_selection(X_train_scaled, X_val_scaled, X_t
             selector = pca
 
         else:
-            raise ValueError("Unsupported feature selection method. Use 'lasso' or 'pca'.")
+            raise ValueError("Unsupported feature selection method. Use 'pca'.")
     else:
         selector = None
 
@@ -96,18 +96,6 @@ def train_random_forest_with_feature_selection(X_train_scaled, X_val_scaled, X_t
 
     with open(f'{output_file}.txt', "a") as f:
         f.write(f"Best Parameters: {random_search.best_params_}")
-
-    # Extract feature importances
-    importances = best_model.feature_importances_
-
-    # Create a DataFrame to store the feature names and their importance scores
-    feature_importance_df = pd.DataFrame({'Feature': X_train_selected.columns, 'Importance': importances})
-
-    # Sort by importance (descending)
-    feature_importance_df = feature_importance_df.sort_values(by='Importance', ascending=False)
-
-    # Save feature importances to file
-    feature_importance_df.to_csv(f'{output_file}_feature_importance.csv', index=False)
 
 
     # Training performance
@@ -273,16 +261,22 @@ def train_multiple_iterations(X, y, output_file, feature_selection_method,
         with open(f'{output_file}.txt', "a") as f:
             f.write(f"\Iteration time: {iteration_time:.4f}\n")
 
-    # Extract feature importance for the best model
-    feature_importance = best_model.feature_importances_
-    # Get selected feature names
-    selected_features = [f"Feature_{i}" for i in range(len(feature_importance))]  # Adjust if needed
-    # Create a DataFrame for feature importance
-    feature_importance_df = pd.DataFrame({'Feature': selected_features, 
-                                        'Importance': feature_importance})
-    feature_importance_df = feature_importance_df.sort_values(by='Importance', ascending=False)
-    # Save feature importance per iteration
-    feature_importance_df.to_csv(f'{output_file}_feature_importance_iteration_{iteration}.csv', index=False)
+        # Extract feature importance for the best model
+        feature_importance = best_model.feature_importances_
+        # Get selected feature names
+        X_test_scaled_df = pd.DataFrame(X_test_scaled, columns=X_test.columns)
+
+        selected_features = selector.get_support()  # Boolean mask for selected features
+        # Get the feature names (columns) from X_train_scaled, which is a DataFrame
+        selected_feature_names = X_test_scaled_df.columns[selected_features]
+
+        # Adjust if needed
+        # Create a DataFrame for feature importance
+        feature_importance_df = pd.DataFrame({'Feature': selected_feature_names, 
+                                            'Importance': feature_importance})
+        feature_importance_df = feature_importance_df.sort_values(by='Importance', ascending=False)
+        # Save feature importance per iteration
+        feature_importance_df.to_csv(f'{output_file}_feature_importance_iteration_{iteration}.csv', index=False)
 
     # Calculate averages
     avg_train_accuracy = cumulative_train_accuracy / n_iterations
