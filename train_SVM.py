@@ -30,30 +30,19 @@ def train_svm_with_feature_selection(X_train_scaled, X_val_scaled, X_test_scaled
     base_svm = SVC(kernel='linear')
     
     # Perform Recursive Feature Elimination with Cross-Validation (RFECV)
-    rfecv = RFECV(estimator=base_svm, step=1, cv=StratifiedKFold(5), scoring='accuracy', n_jobs=-1)
+    rfecv = RFECV(estimator=base_svm, step=1, cv=StratifiedKFold(5), scoring='accuracy', n_jobs=n_jobs)
     rfecv.fit(X_train_scaled, y_train)
-    
+
     # Select features based on RFECV results
-    X_test_columns = X_test_scaled.columns
-    selected_features = np.array(X_test_columns)[rfecv.support_].tolist()
+    selected_features = np.where(rfecv.support_)[0].tolist()
     X_train_selected = X_train_scaled[:, rfecv.support_]
-    X_test_selected = X_test_scaled[:, rfecv.support_]
     X_val_selected = X_val_scaled[:, rfecv.support_]
+    X_test_selected = X_test_scaled[:, rfecv.support_]
 
     n_selected_features = len(selected_features)
     print("Number of Features:", n_selected_features)
     with open(f'{output_file}.txt', "a") as f:
         f.write(f'Selected {n_selected_features} features\n')
-
-    
-    # Hyperparameter tuning grid
-    param_grid = {
-    'n_estimators': [100, 200, 300],
-    'max_depth': [3, 5, 8, 10],
-    'min_samples_split':  [20, 50, 100, 120],
-    'min_samples_leaf': [10, 20, 50],
-    'max_features': ['sqrt', 'log2', None]  # Limits the number of features considered at each split
-    }
 
     # Perform randomized search with 5-fold cross-validation
     # Hyperparameter tuning using RandomizedSearchCV
@@ -63,7 +52,8 @@ def train_svm_with_feature_selection(X_train_scaled, X_val_scaled, X_test_scaled
         'gamma': ['scale', 'auto']
     }
     
-    tuned_svm = SVC()
+    tuned_svm = SVC(probability=True)
+    # Create a pipeline with the tuned SVM
     random_search = RandomizedSearchCV(tuned_svm, param_grid, n_iter=20, cv=5, scoring='accuracy', n_jobs=-1, random_state=42)
     random_search.fit(X_train_selected, y_train)
     
@@ -145,7 +135,7 @@ def train_svm_with_feature_selection(X_train_scaled, X_val_scaled, X_test_scaled
 
     return (train_accuracy, train_roc_auc, train_f1, train_balanced_acc, train_auprc,
             val_accuracy, val_roc_auc, val_f1, val_balanced_acc, val_auprc,
-            test_accuracy, test_roc_auc, test_f1, test_balanced_acc, test_auprc, best_model, selector)
+            test_accuracy, test_roc_auc, test_f1, test_balanced_acc, test_auprc, best_model, rfecv)
 
 # Main function to run multiple iterations with different splits
 def train_multiple_iterations(X, y, output_file, feature_selection_method, 
@@ -188,7 +178,7 @@ def train_multiple_iterations(X, y, output_file, feature_selection_method,
         # Train the model and get metrics
         (train_accuracy, train_roc_auc, train_f1, train_balanced_acc, train_auprc,
          val_accuracy, val_roc_auc, val_f1, val_balanced_acc, val_auprc,
-         test_accuracy, test_roc_auc, test_f1, test_balanced_acc, test_auprc, best_model, selector) = \
+         test_accuracy, test_roc_auc, test_f1, test_balanced_acc, test_auprc, best_model, rfecv) = \
             train_svm_with_feature_selection(X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, output_file, 
                                                     feature_selection_method, use_feature_selection, 
                                                     verbose)
@@ -237,18 +227,22 @@ def train_multiple_iterations(X, y, output_file, feature_selection_method,
         with open(f'{output_file}.txt', "a") as f:
             f.write(f"\Iteration time: {iteration_time:.4f}\n")
 
-        # Extract feature importance for the best model
-        feature_importance = best_model.feature_importances_
+        # Extract feature importance from RFECV
+        feature_importance = np.abs(rfecv.estimator_.coef_).flatten()  # Use absolute value of coefficients
+        # feature_importance = rfecv.estimator_.feature_importances_  # Use feature importances from the model
+        
         # Get selected feature names
         X_test_scaled_df = pd.DataFrame(X_test_scaled, columns=X_test.columns)
+        X_test_columns = X_test_scaled_df.columns
 
-        selected_features = selector.get_support()  # Boolean mask for selected features
-        # Get the feature names (columns) from X_train_scaled, which is a DataFrame
-        selected_feature_names = X_test_scaled_df.columns[selected_features]
+        # Get selected feature names
+        selected_features = np.array(X_test_columns)[rfecv.support_].tolist()
 
-        # Adjust if needed
+        # # Get the feature names (columns) from X_train_scaled, which is a DataFrame
+        # selected_feature_names = X_test_scaled_df.columns[selected_features]
+
         # Create a DataFrame for feature importance
-        feature_importance_df = pd.DataFrame({'Feature': selected_feature_names, 
+        feature_importance_df = pd.DataFrame({'Feature': selected_features, 
                                             'Importance': feature_importance})
         feature_importance_df = feature_importance_df.sort_values(by='Importance', ascending=False)
         # Save feature importance per iteration
